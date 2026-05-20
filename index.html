@@ -1,0 +1,473 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Smart Attendance System</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,500;12..96,600;12..96,700;12..96,800&family=Figtree:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css" />
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+
+  <div class="sidebar-overlay" id="sidebarOverlay"></div>
+  <button class="mobile-menu-btn" id="menuBtn"><i class="fa-solid fa-bars"></i></button>
+
+  <div class="dashboard-container">
+
+    <!-- SIDEBAR -->
+    <aside class="sidebar" id="sidebar">
+      <div class="logo-section">
+        <div class="logo-circle"><i class="fa-solid fa-qrcode"></i></div>
+        <div>
+          <h2>SMART</h2>
+          <p>Attendance System</p>
+        </div>
+      </div>
+      <nav class="sidebar-nav">
+        <a href="#" class="nav-item active" data-page="dashboard"><i class="fa-solid fa-chart-line"></i><span>Dashboard</span></a>
+        <a href="#" class="nav-item" data-page="events"><i class="fa-solid fa-calendar-days"></i><span>Events</span></a>
+        <a href="#" class="nav-item" data-page="sessions"><i class="fa-solid fa-clock"></i><span>Sessions</span></a>
+        <a href="#" class="nav-item" data-page="attendance"><i class="fa-solid fa-user-check"></i><span>Attendance</span></a>
+        <a href="#" class="nav-item" data-page="qr"><i class="fa-solid fa-qrcode"></i><span>QR Management</span></a>
+        <a href="#" class="nav-item" data-page="analytics"><i class="fa-solid fa-chart-pie"></i><span>Analytics</span></a>
+        <a href="#" class="nav-item" data-page="exports"><i class="fa-solid fa-file-export"></i><span>Exports</span></a>
+        <a href="#" class="nav-item" data-page="archives"><i class="fa-solid fa-box-archive"></i><span>Archives</span></a>
+        <a href="#" class="nav-item" data-page="settings"><i class="fa-solid fa-gear"></i><span>Settings</span></a>
+      </nav>
+      <div class="logout-section">
+        <button class="logout-btn"><i class="fa-solid fa-right-from-bracket"></i><span>Logout</span></button>
+      </div>
+    </aside>
+
+    <!-- MAIN -->
+    <main class="main-content">
+
+      <!-- NAVBAR -->
+      <header class="top-navbar">
+        <div class="search-box">
+          <i class="fa-solid fa-magnifying-glass"></i>
+          <input type="text" placeholder="Search attendee, event, session…" />
+        </div>
+        <div class="top-actions">
+          <button class="create-btn"><i class="fa-solid fa-plus"></i> Quick Create</button>
+          <button class="icon-btn"><i class="fa-solid fa-bell"></i><span class="notif-dot"></span></button>
+          <div class="admin-profile">
+            <img src="https://i.pravatar.cc/150?img=12" alt="Admin" />
+            <div><h4>Admin</h4><p>Super Admin</p></div>
+          </div>
+        </div>
+      </header>
+
+      <div class="pages-container">
+
+        <!-- ══════════ DASHBOARD ══════════ -->
+        <section class="page active" id="page-dashboard">
+          <div class="page-header">
+            <div>
+              <h1>Dashboard Overview</h1>
+              <p>Monitor events, attendance, and QR sessions in real-time.</p>
+            </div>
+            <span class="live-pill"><span class="live-dot"></span>Live</span>
+          </div>
+
+          <div class="stats-grid">
+            <div class="stat-card">
+              <div><h3>Total Events</h3><h2>128</h2><span class="tag green">↑ 12% this month</span></div>
+              <div class="stat-icon blue"><i class="fa-solid fa-calendar-days"></i></div>
+            </div>
+            <div class="stat-card">
+              <div><h3>Active Sessions</h3><h2>7</h2><span class="tag green">● Live now</span></div>
+              <div class="stat-icon green"><i class="fa-solid fa-clock"></i></div>
+            </div>
+            <div class="stat-card">
+              <div><h3>Total Attendees</h3><h2>14,295</h2><span class="tag green">↑ 22% overall</span></div>
+              <div class="stat-icon orange"><i class="fa-solid fa-users"></i></div>
+            </div>
+            <div class="stat-card">
+              <div><h3>Live Attendance</h3><h2>322</h2><span class="tag green">+12 this min</span></div>
+              <div class="stat-icon red"><i class="fa-solid fa-user-check"></i></div>
+            </div>
+          </div>
+
+          <div class="dashboard-grid">
+            <div class="card qr-panel">
+              <div class="card-header">
+                <h2>Live QR Session</h2>
+                <span class="status-pill active">ACTIVE</span>
+              </div>
+              <div class="session-info">
+                <h3>Sunday Worship</h3>
+                <p><i class="fa-solid fa-location-dot"></i> Conference Hall A</p>
+              </div>
+              <div class="qr-box"><i class="fa-solid fa-qrcode"></i></div>
+              <div class="timer">Refreshes in <strong id="timerCount">10</strong> sec</div>
+              <div class="progress-bar"><div class="progress" id="qrProgress"></div></div>
+              <button class="danger-btn"><i class="fa-solid fa-stop"></i> End Session</button>
+            </div>
+
+            <div class="dashboard-right">
+              <div class="card controls-card">
+                <div class="card-header"><h2>Session Controls</h2></div>
+                <div class="controls-grid">
+                  <button class="control-btn green-btn"><i class="fa-solid fa-play"></i> Start Session</button>
+                  <button class="control-btn orange-btn"><i class="fa-solid fa-pause"></i> Pause Session</button>
+                  <button class="control-btn blue-btn"><i class="fa-solid fa-qrcode"></i> Generate QR</button>
+                  <button class="control-btn grey-btn"><i class="fa-solid fa-box-archive"></i> Archive</button>
+                </div>
+              </div>
+              <div class="card mini-stats-card">
+                <div class="card-header"><h2>Today's Summary</h2></div>
+                <div class="mini-stats">
+                  <div class="mini-stat"><span>Check-ins</span><strong>322</strong></div>
+                  <div class="mini-stat"><span>Pending</span><strong>14</strong></div>
+                  <div class="mini-stat"><span>Duplicates</span><strong>3</strong></div>
+                  <div class="mini-stat"><span>Sessions</span><strong>7</strong></div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div class="card table-card">
+            <div class="card-header">
+              <h2>Recent Attendance</h2>
+              <button class="text-link" data-page="attendance">View all <i class="fa-solid fa-arrow-right"></i></button>
+            </div>
+            <div class="table-wrapper">
+              <table>
+                <thead><tr><th>Name</th><th>Event</th><th>Session</th><th>Time</th><th>Status</th><th>Method</th></tr></thead>
+                <tbody>
+                  <tr><td><div class="av-cell"><img src="https://i.pravatar.cc/32?img=1"/>John Doe</div></td><td>Church Service</td><td>Morning</td><td>09:32 AM</td><td><span class="status verified">Verified</span></td><td><span class="mbadge">QR Scan</span></td></tr>
+                  <tr><td><div class="av-cell"><img src="https://i.pravatar.cc/32?img=5"/>Sarah James</div></td><td>Conference</td><td>Workshop</td><td>10:11 AM</td><td><span class="status pending">Pending</span></td><td><span class="mbadge manual">Manual</span></td></tr>
+                  <tr><td><div class="av-cell"><img src="https://i.pravatar.cc/32?img=3"/>Michael Joe</div></td><td>NGO Meeting</td><td>General</td><td>11:20 AM</td><td><span class="status blocked">Duplicate</span></td><td><span class="mbadge">QR Scan</span></td></tr>
+                  <tr><td><div class="av-cell"><img src="https://i.pravatar.cc/32?img=8"/>Emily Chen</div></td><td>Sunday Worship</td><td>Main</td><td>11:45 AM</td><td><span class="status verified">Verified</span></td><td><span class="mbadge">QR Scan</span></td></tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </section>
+
+        <!-- ══════════ EVENTS ══════════ -->
+        <section class="page" id="page-events">
+          <div class="page-header">
+            <div><h1>Events</h1><p>Manage and track all your events.</p></div>
+            <button class="create-btn"><i class="fa-solid fa-plus"></i> New Event</button>
+          </div>
+
+          <div class="filter-bar">
+            <div class="search-box small"><i class="fa-solid fa-magnifying-glass"></i><input type="text" placeholder="Search events…"/></div>
+            <div class="chips">
+              <button class="chip active">All</button>
+              <button class="chip">Upcoming</button>
+              <button class="chip">Active</button>
+              <button class="chip">Completed</button>
+              <button class="chip">Archived</button>
+            </div>
+          </div>
+
+          <div class="events-grid">
+            <div class="event-card"><div class="ec-top blue-g"><span class="ec-badge upcoming">Upcoming</span><i class="fa-solid fa-church ec-icon"></i></div><div class="ec-body"><h3>Sunday Worship Service</h3><p><i class="fa-solid fa-calendar"></i> May 25, 2026</p><p><i class="fa-solid fa-clock"></i> 9:00 AM – 12:00 PM</p><p><i class="fa-solid fa-location-dot"></i> Main Auditorium</p><div class="ec-footer"><span><i class="fa-solid fa-users"></i> 412 registered</span><button class="pill-btn">Manage</button></div></div></div>
+            <div class="event-card"><div class="ec-top green-g"><span class="ec-badge active-e">Active</span><i class="fa-solid fa-people-group ec-icon"></i></div><div class="ec-body"><h3>Annual NGO Conference</h3><p><i class="fa-solid fa-calendar"></i> May 19, 2026</p><p><i class="fa-solid fa-clock"></i> 10:00 AM – 5:00 PM</p><p><i class="fa-solid fa-location-dot"></i> Conference Hall A</p><div class="ec-footer"><span><i class="fa-solid fa-users"></i> 289 registered</span><button class="pill-btn">Manage</button></div></div></div>
+            <div class="event-card"><div class="ec-top orange-g"><span class="ec-badge upcoming">Upcoming</span><i class="fa-solid fa-graduation-cap ec-icon"></i></div><div class="ec-body"><h3>Tech Workshop 2026</h3><p><i class="fa-solid fa-calendar"></i> June 2, 2026</p><p><i class="fa-solid fa-clock"></i> 2:00 PM – 6:00 PM</p><p><i class="fa-solid fa-location-dot"></i> Tech Hub, Room 3</p><div class="ec-footer"><span><i class="fa-solid fa-users"></i> 158 registered</span><button class="pill-btn">Manage</button></div></div></div>
+            <div class="event-card"><div class="ec-top purple-g"><span class="ec-badge completed">Completed</span><i class="fa-solid fa-music ec-icon"></i></div><div class="ec-body"><h3>Youth Concert Night</h3><p><i class="fa-solid fa-calendar"></i> May 10, 2026</p><p><i class="fa-solid fa-clock"></i> 6:00 PM – 10:00 PM</p><p><i class="fa-solid fa-location-dot"></i> Community Hall</p><div class="ec-footer"><span><i class="fa-solid fa-users"></i> 540 attended</span><button class="pill-btn">View</button></div></div></div>
+            <div class="event-card"><div class="ec-top red-g"><span class="ec-badge active-e">Active</span><i class="fa-solid fa-briefcase ec-icon"></i></div><div class="ec-body"><h3>Board Meeting Q2</h3><p><i class="fa-solid fa-calendar"></i> May 19, 2026</p><p><i class="fa-solid fa-clock"></i> 11:00 AM – 1:00 PM</p><p><i class="fa-solid fa-location-dot"></i> Boardroom B</p><div class="ec-footer"><span><i class="fa-solid fa-users"></i> 24 invited</span><button class="pill-btn">Manage</button></div></div></div>
+            <div class="event-card"><div class="ec-top teal-g"><span class="ec-badge upcoming">Upcoming</span><i class="fa-solid fa-hand-holding-heart ec-icon"></i></div><div class="ec-body"><h3>Community Outreach Day</h3><p><i class="fa-solid fa-calendar"></i> June 8, 2026</p><p><i class="fa-solid fa-clock"></i> 8:00 AM – 4:00 PM</p><p><i class="fa-solid fa-location-dot"></i> City Park</p><div class="ec-footer"><span><i class="fa-solid fa-users"></i> 95 registered</span><button class="pill-btn">Manage</button></div></div></div>
+          </div>
+        </section>
+
+        <!-- ══════════ SESSIONS ══════════ -->
+        <section class="page" id="page-sessions">
+          <div class="page-header">
+            <div><h1>Sessions</h1><p>View and control all attendance sessions.</p></div>
+            <button class="create-btn"><i class="fa-solid fa-plus"></i> New Session</button>
+          </div>
+          <div class="active-banner">
+            <div><span class="live-dot"></span><strong>7 sessions currently active</strong> — QR codes refreshing automatically</div>
+            <button class="text-link danger">End All</button>
+          </div>
+          <div class="card table-card" style="margin-top:0">
+            <div class="card-header">
+              <h2>All Sessions</h2>
+              <div class="chips small">
+                <button class="chip active">All</button><button class="chip">Active</button><button class="chip">Paused</button><button class="chip">Ended</button>
+              </div>
+            </div>
+            <div class="table-wrapper">
+              <table>
+                <thead><tr><th>Session Name</th><th>Event</th><th>Start</th><th>Duration</th><th>Check-ins</th><th>Status</th><th>Action</th></tr></thead>
+                <tbody>
+                  <tr><td><strong>Morning Service</strong></td><td>Sunday Worship</td><td>9:00 AM</td><td>2h 15m</td><td>322</td><td><span class="status verified">Active</span></td><td><button class="act-btn red">End</button></td></tr>
+                  <tr><td><strong>Workshop A</strong></td><td>NGO Conference</td><td>10:00 AM</td><td>1h 30m</td><td>89</td><td><span class="status verified">Active</span></td><td><button class="act-btn red">End</button></td></tr>
+                  <tr><td><strong>General Session</strong></td><td>NGO Conference</td><td>10:30 AM</td><td>45m</td><td>201</td><td><span class="status pending">Paused</span></td><td><button class="act-btn green">Resume</button></td></tr>
+                  <tr><td><strong>Board Meeting</strong></td><td>Q2 Meeting</td><td>11:00 AM</td><td>20m</td><td>18</td><td><span class="status verified">Active</span></td><td><button class="act-btn red">End</button></td></tr>
+                  <tr><td><strong>Evening Prayer</strong></td><td>Sunday Worship</td><td>6:00 PM</td><td>—</td><td>—</td><td><span class="status blocked">Scheduled</span></td><td><button class="act-btn green">Start</button></td></tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </section>
+
+        <!-- ══════════ ATTENDANCE ══════════ -->
+        <section class="page" id="page-attendance">
+          <div class="page-header">
+            <div><h1>Attendance Records</h1><p>Complete log of all check-ins and verifications.</p></div>
+            <button class="create-btn"><i class="fa-solid fa-user-plus"></i> Add Manual</button>
+          </div>
+          <div class="filter-bar">
+            <div class="search-box small"><i class="fa-solid fa-magnifying-glass"></i><input type="text" placeholder="Search by name…"/></div>
+            <select class="fsel"><option>All Events</option><option>Sunday Worship</option><option>NGO Conference</option><option>Board Meeting</option></select>
+            <select class="fsel"><option>All Status</option><option>Verified</option><option>Pending</option><option>Duplicate</option></select>
+            <input type="date" class="fsel" value="2026-05-19"/>
+          </div>
+          <div class="card table-card" style="margin-top:0">
+            <div class="card-header"><h2>All Records <span class="count-tag">14,295</span></h2></div>
+            <div class="table-wrapper">
+              <table>
+                <thead><tr><th><input type="checkbox"/></th><th>Name</th><th>Event</th><th>Session</th><th>Date</th><th>Time</th><th>Status</th><th>Method</th><th></th></tr></thead>
+                <tbody>
+                  <tr><td><input type="checkbox"/></td><td><div class="av-cell"><img src="https://i.pravatar.cc/32?img=1"/>John Doe</div></td><td>Church Service</td><td>Morning</td><td>May 19</td><td>09:32 AM</td><td><span class="status verified">Verified</span></td><td><span class="mbadge">QR Scan</span></td><td><button class="icon-action"><i class="fa-solid fa-eye"></i></button></td></tr>
+                  <tr><td><input type="checkbox"/></td><td><div class="av-cell"><img src="https://i.pravatar.cc/32?img=5"/>Sarah James</div></td><td>Conference</td><td>Workshop</td><td>May 19</td><td>10:11 AM</td><td><span class="status pending">Pending</span></td><td><span class="mbadge manual">Manual</span></td><td><button class="icon-action"><i class="fa-solid fa-eye"></i></button></td></tr>
+                  <tr><td><input type="checkbox"/></td><td><div class="av-cell"><img src="https://i.pravatar.cc/32?img=3"/>Michael Joe</div></td><td>NGO Meeting</td><td>General</td><td>May 19</td><td>11:20 AM</td><td><span class="status blocked">Duplicate</span></td><td><span class="mbadge">QR Scan</span></td><td><button class="icon-action"><i class="fa-solid fa-eye"></i></button></td></tr>
+                  <tr><td><input type="checkbox"/></td><td><div class="av-cell"><img src="https://i.pravatar.cc/32?img=8"/>Emily Chen</div></td><td>Sunday Worship</td><td>Main</td><td>May 19</td><td>11:45 AM</td><td><span class="status verified">Verified</span></td><td><span class="mbadge">QR Scan</span></td><td><button class="icon-action"><i class="fa-solid fa-eye"></i></button></td></tr>
+                  <tr><td><input type="checkbox"/></td><td><div class="av-cell"><img src="https://i.pravatar.cc/32?img=11"/>David Park</div></td><td>Board Meeting</td><td>Main</td><td>May 19</td><td>11:02 AM</td><td><span class="status verified">Verified</span></td><td><span class="mbadge manual">Manual</span></td><td><button class="icon-action"><i class="fa-solid fa-eye"></i></button></td></tr>
+                </tbody>
+              </table>
+            </div>
+            <div class="pagination">
+              <span>Showing 1–5 of 14,295</span>
+              <div class="page-btns">
+                <button class="pbtn" disabled><i class="fa-solid fa-chevron-left"></i></button>
+                <button class="pbtn active">1</button>
+                <button class="pbtn">2</button>
+                <button class="pbtn">3</button>
+                <span class="pdots">…</span>
+                <button class="pbtn">2,859</button>
+                <button class="pbtn"><i class="fa-solid fa-chevron-right"></i></button>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <!-- ══════════ QR MANAGEMENT ══════════ -->
+        <section class="page" id="page-qr">
+          <div class="page-header">
+            <div><h1>QR Management</h1><p>Generate, monitor, and manage QR codes for sessions.</p></div>
+            <button class="create-btn"><i class="fa-solid fa-qrcode"></i> Generate QR</button>
+          </div>
+          <div class="qr-mgmt-grid">
+            <div class="card">
+              <div class="card-header"><h2>Active QR Code</h2><span class="status-pill active">LIVE</span></div>
+              <div class="qr-box large"><i class="fa-solid fa-qrcode"></i></div>
+              <div class="qr-meta">
+                <div class="qm-row"><span>Session</span><strong>Sunday Worship — Morning</strong></div>
+                <div class="qm-row"><span>Scans</span><strong>322</strong></div>
+                <div class="qm-row"><span>Expires</span><strong>in 10s</strong></div>
+              </div>
+              <div class="progress-bar" style="margin-top:12px"><div class="progress"></div></div>
+              <div class="qr-action-row">
+                <button class="control-btn blue-btn"><i class="fa-solid fa-rotate"></i> Refresh</button>
+                <button class="control-btn grey-btn"><i class="fa-solid fa-download"></i> Download</button>
+              </div>
+            </div>
+            <div class="card">
+              <div class="card-header"><h2>QR Settings</h2></div>
+              <div class="settings-list">
+                <div class="srow"><div><h4>Auto-refresh interval</h4><p>How often the QR regenerates</p></div><select class="fsel small"><option>10 seconds</option><option>30 seconds</option><option>1 minute</option></select></div>
+                <div class="srow"><div><h4>Duplicate prevention</h4><p>Block same QR scan twice</p></div><label class="toggle"><input type="checkbox" checked/><span class="tslider"></span></label></div>
+                <div class="srow"><div><h4>Offline fallback</h4><p>Allow manual entry if QR fails</p></div><label class="toggle"><input type="checkbox" checked/><span class="tslider"></span></label></div>
+                <div class="srow"><div><h4>QR size</h4><p>Display size for scanning</p></div><select class="fsel small"><option>Medium</option><option>Large</option><option>Extra Large</option></select></div>
+              </div>
+            </div>
+          </div>
+          <div class="card table-card" style="margin-top:18px">
+            <div class="card-header"><h2>QR History</h2></div>
+            <div class="table-wrapper">
+              <table>
+                <thead><tr><th>Session</th><th>Event</th><th>Generated</th><th>Expired</th><th>Scans</th><th>Status</th></tr></thead>
+                <tbody>
+                  <tr><td>Morning Service</td><td>Sunday Worship</td><td>9:00 AM</td><td>Active</td><td>322</td><td><span class="status verified">Active</span></td></tr>
+                  <tr><td>Workshop A</td><td>NGO Conference</td><td>10:00 AM</td><td>11:30 AM</td><td>89</td><td><span class="status blocked">Expired</span></td></tr>
+                  <tr><td>Board Meeting</td><td>Q2 Meeting</td><td>11:00 AM</td><td>12:00 PM</td><td>18</td><td><span class="status blocked">Expired</span></td></tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </section>
+
+        <!-- ══════════ ANALYTICS ══════════ -->
+        <section class="page" id="page-analytics">
+          <div class="page-header">
+            <div><h1>Analytics</h1><p>Insights and trends across all events and sessions.</p></div>
+            <select class="fsel"><option>Last 30 days</option><option>Last 7 days</option><option>This year</option></select>
+          </div>
+          <div class="stats-grid">
+            <div class="stat-card"><div><h3>Avg. Attendance Rate</h3><h2>84%</h2><span class="tag green">↑ 6% vs last month</span></div><div class="stat-icon blue"><i class="fa-solid fa-percent"></i></div></div>
+            <div class="stat-card"><div><h3>Peak Day</h3><h2>Sunday</h2><span class="tag green">Most active</span></div><div class="stat-icon green"><i class="fa-solid fa-calendar-check"></i></div></div>
+            <div class="stat-card"><div><h3>QR Scan Rate</h3><h2>91%</h2><span class="tag green">↑ 3% vs last month</span></div><div class="stat-icon orange"><i class="fa-solid fa-qrcode"></i></div></div>
+            <div class="stat-card"><div><h3>Duplicate Rate</h3><h2>1.2%</h2><span class="tag red">Needs review</span></div><div class="stat-icon red"><i class="fa-solid fa-triangle-exclamation"></i></div></div>
+          </div>
+          <div class="analytics-grid">
+            <div class="card chart-card">
+              <div class="card-header"><h2>Weekly Attendance</h2><span class="muted-sm">May 2026</span></div>
+              <div class="bar-chart">
+                <div class="bar" style="--h:60%"><span class="blabel">Mon</span></div>
+                <div class="bar" style="--h:80%"><span class="blabel">Tue</span></div>
+                <div class="bar" style="--h:45%"><span class="blabel">Wed</span></div>
+                <div class="bar" style="--h:70%"><span class="blabel">Thu</span></div>
+                <div class="bar" style="--h:55%"><span class="blabel">Fri</span></div>
+                <div class="bar" style="--h:90%"><span class="blabel">Sat</span></div>
+                <div class="bar hi" style="--h:100%"><span class="blabel">Sun</span></div>
+              </div>
+            </div>
+            <div class="card chart-card">
+              <div class="card-header"><h2>Check-in Methods</h2><span class="muted-sm">All time</span></div>
+              <div class="donut-wrap">
+                <svg viewBox="0 0 100 100" class="donut-svg">
+                  <circle cx="50" cy="50" r="36" fill="none" stroke="#f0f2ff" stroke-width="12"/>
+                  <circle cx="50" cy="50" r="36" fill="none" stroke="#4f46e5" stroke-width="12" stroke-dasharray="170 226" stroke-dashoffset="-56" stroke-linecap="round"/>
+                  <circle cx="50" cy="50" r="36" fill="none" stroke="#10b981" stroke-width="12" stroke-dasharray="36 226" stroke-dashoffset="114" stroke-linecap="round"/>
+                  <circle cx="50" cy="50" r="36" fill="none" stroke="#f59e0b" stroke-width="12" stroke-dasharray="20 226" stroke-dashoffset="150" stroke-linecap="round"/>
+                </svg>
+                <div class="donut-center"><strong>14,295</strong><span>total</span></div>
+              </div>
+              <div class="donut-legend">
+                <div class="dl-item"><span style="background:#4f46e5"></span>QR Scan (75%)</div>
+                <div class="dl-item"><span style="background:#10b981"></span>Manual (16%)</div>
+                <div class="dl-item"><span style="background:#f59e0b"></span>Other (9%)</div>
+              </div>
+            </div>
+          </div>
+          <div class="card table-card" style="margin-top:18px">
+            <div class="card-header"><h2>Top Events by Attendance</h2></div>
+            <div class="table-wrapper">
+              <table>
+                <thead><tr><th>#</th><th>Event</th><th>Date</th><th>Registered</th><th>Attended</th><th>Rate</th></tr></thead>
+                <tbody>
+                  <tr><td>1</td><td>Youth Concert Night</td><td>May 10</td><td>580</td><td>540</td><td><div class="rate-wrap"><div class="rate-bar"><div style="width:93%;background:var(--accent)"></div></div><span>93%</span></div></td></tr>
+                  <tr><td>2</td><td>Sunday Worship</td><td>May 12</td><td>450</td><td>412</td><td><div class="rate-wrap"><div class="rate-bar"><div style="width:92%;background:var(--accent)"></div></div><span>92%</span></div></td></tr>
+                  <tr><td>3</td><td>NGO Conference</td><td>May 19</td><td>320</td><td>289</td><td><div class="rate-wrap"><div class="rate-bar"><div style="width:90%;background:#10b981"></div></div><span>90%</span></div></td></tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </section>
+
+        <!-- ══════════ EXPORTS ══════════ -->
+        <section class="page" id="page-exports">
+          <div class="page-header"><div><h1>Exports</h1><p>Download attendance data in your preferred format.</p></div></div>
+          <div class="exports-grid">
+            <div class="export-card"><div class="export-icon" style="background:#ecfdf5;color:#059669"><i class="fa-solid fa-file-csv"></i></div><h3>CSV Export</h3><p>Raw comma-separated data, perfect for spreadsheets and further processing.</p><div class="export-opts"><select class="fsel full"><option>All Events</option><option>Sunday Worship</option><option>NGO Conference</option></select><select class="fsel full"><option>All Time</option><option>Today</option><option>This Week</option><option>This Month</option></select></div><button class="export-btn" style="background:#059669">↓ Export CSV</button></div>
+            <div class="export-card"><div class="export-icon" style="background:#eff6ff;color:#2563eb"><i class="fa-solid fa-file-excel"></i></div><h3>Excel Export</h3><p>Formatted Excel workbook with charts and pivot-ready data structures.</p><div class="export-opts"><select class="fsel full"><option>All Events</option><option>Sunday Worship</option></select><select class="fsel full"><option>All Time</option><option>Today</option><option>This Week</option></select></div><button class="export-btn" style="background:#2563eb">↓ Export Excel</button></div>
+            <div class="export-card"><div class="export-icon" style="background:#fef2f2;color:#dc2626"><i class="fa-solid fa-file-pdf"></i></div><h3>PDF Report</h3><p>Printable attendance report with summary stats and full records list.</p><div class="export-opts"><select class="fsel full"><option>All Events</option><option>Sunday Worship</option></select><select class="fsel full"><option>All Time</option><option>Today</option><option>This Week</option></select></div><button class="export-btn" style="background:#dc2626">↓ Export PDF</button></div>
+          </div>
+          <div class="card table-card" style="margin-top:18px">
+            <div class="card-header"><h2>Recent Exports</h2></div>
+            <div class="table-wrapper">
+              <table>
+                <thead><tr><th>File Name</th><th>Type</th><th>Event</th><th>Generated</th><th>Size</th><th>Action</th></tr></thead>
+                <tbody>
+                  <tr><td>attendance_may19_2026.csv</td><td><span class="mbadge" style="background:#ecfdf5;color:#059669">CSV</span></td><td>All Events</td><td>Today, 11:00 AM</td><td>1.2 MB</td><td><button class="act-btn blue">Download</button></td></tr>
+                  <tr><td>sunday_worship_report.pdf</td><td><span class="mbadge" style="background:#fef2f2;color:#dc2626">PDF</span></td><td>Sunday Worship</td><td>May 18, 3:45 PM</td><td>3.8 MB</td><td><button class="act-btn blue">Download</button></td></tr>
+                  <tr><td>ngo_conference_data.xlsx</td><td><span class="mbadge" style="background:#eff6ff;color:#2563eb">XLSX</span></td><td>NGO Conference</td><td>May 17, 9:20 AM</td><td>2.1 MB</td><td><button class="act-btn blue">Download</button></td></tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </section>
+
+        <!-- ══════════ ARCHIVES ══════════ -->
+        <section class="page" id="page-archives">
+          <div class="page-header"><div><h1>Archives</h1><p>Archived events and sessions — restore or permanently delete.</p></div></div>
+          <div class="filter-bar">
+            <div class="search-box small"><i class="fa-solid fa-magnifying-glass"></i><input type="text" placeholder="Search archives…"/></div>
+            <div class="chips"><button class="chip active">All</button><button class="chip">Events</button><button class="chip">Sessions</button></div>
+          </div>
+          <div class="card table-card" style="margin-top:0">
+            <div class="card-header"><h2>Archived Items <span class="count-tag">24</span></h2></div>
+            <div class="table-wrapper">
+              <table>
+                <thead><tr><th>Name</th><th>Type</th><th>Date</th><th>Attendees</th><th>Archived On</th><th>Actions</th></tr></thead>
+                <tbody>
+                  <tr><td><strong>Youth Concert Night</strong></td><td><span class="mbadge">Event</span></td><td>May 10, 2026</td><td>540</td><td>May 11, 2026</td><td><button class="act-btn green">Restore</button> <button class="act-btn red">Delete</button></td></tr>
+                  <tr><td><strong>Easter Service</strong></td><td><span class="mbadge">Event</span></td><td>Apr 20, 2026</td><td>712</td><td>Apr 21, 2026</td><td><button class="act-btn green">Restore</button> <button class="act-btn red">Delete</button></td></tr>
+                  <tr><td><strong>Workshop B — NGO</strong></td><td><span class="mbadge">Session</span></td><td>Apr 15, 2026</td><td>91</td><td>Apr 16, 2026</td><td><button class="act-btn green">Restore</button> <button class="act-btn red">Delete</button></td></tr>
+                  <tr><td><strong>Q1 Board Meeting</strong></td><td><span class="mbadge">Event</span></td><td>Mar 30, 2026</td><td>22</td><td>Mar 31, 2026</td><td><button class="act-btn green">Restore</button> <button class="act-btn red">Delete</button></td></tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </section>
+
+        <!-- ══════════ SETTINGS ══════════ -->
+        <section class="page" id="page-settings">
+          <div class="page-header"><div><h1>Settings</h1><p>Configure your account, notifications, and system preferences.</p></div></div>
+          <div class="settings-tabs">
+            <button class="stab active" data-tab="profile"><i class="fa-solid fa-user"></i> Profile</button>
+            <button class="stab" data-tab="notifications"><i class="fa-solid fa-bell"></i> Notifications</button>
+            <button class="stab" data-tab="security"><i class="fa-solid fa-shield-halved"></i> Security</button>
+            <button class="stab" data-tab="system"><i class="fa-solid fa-gear"></i> System</button>
+          </div>
+
+          <div class="stab-panel active" id="tab-profile">
+            <div class="card settings-card">
+              <div class="avatar-section">
+                <img src="https://i.pravatar.cc/150?img=12" alt="Admin" class="settings-avatar"/>
+                <div><h3>Admin User</h3><p>Super Administrator</p><button class="pill-btn" style="margin-top:8px">Change Photo</button></div>
+              </div>
+              <div class="sform">
+                <div class="form-row"><div class="fg"><label>First Name</label><input type="text" value="Admin" class="finput"/></div><div class="fg"><label>Last Name</label><input type="text" value="User" class="finput"/></div></div>
+                <div class="fg"><label>Email Address</label><input type="email" value="admin@smartattendance.com" class="finput"/></div>
+                <div class="fg"><label>Organization</label><input type="text" value="Smart Attendance Inc." class="finput"/></div>
+                <div class="fg"><label>Role</label><select class="fsel full"><option>Super Admin</option><option>Admin</option><option>Viewer</option></select></div>
+                <button class="create-btn">Save Changes</button>
+              </div>
+            </div>
+          </div>
+
+          <div class="stab-panel" id="tab-notifications">
+            <div class="card settings-card">
+              <div class="settings-list">
+                <div class="srow"><div><h4>Email Notifications</h4><p>Receive session and event summaries via email</p></div><label class="toggle"><input type="checkbox" checked/><span class="tslider"></span></label></div>
+                <div class="srow"><div><h4>Live Check-in Alerts</h4><p>Get notified when attendance spikes</p></div><label class="toggle"><input type="checkbox" checked/><span class="tslider"></span></label></div>
+                <div class="srow"><div><h4>Duplicate Entry Alerts</h4><p>Alert when a duplicate QR scan is detected</p></div><label class="toggle"><input type="checkbox" checked/><span class="tslider"></span></label></div>
+                <div class="srow"><div><h4>Export Completion</h4><p>Notify when a data export finishes</p></div><label class="toggle"><input type="checkbox"/><span class="tslider"></span></label></div>
+                <div class="srow"><div><h4>Weekly Summary Report</h4><p>Automated weekly attendance digest every Monday</p></div><label class="toggle"><input type="checkbox" checked/><span class="tslider"></span></label></div>
+              </div>
+            </div>
+          </div>
+
+          <div class="stab-panel" id="tab-security">
+            <div class="card settings-card">
+              <div class="sform">
+                <div class="fg"><label>Current Password</label><input type="password" placeholder="••••••••" class="finput"/></div>
+                <div class="form-row"><div class="fg"><label>New Password</label><input type="password" placeholder="••••••••" class="finput"/></div><div class="fg"><label>Confirm Password</label><input type="password" placeholder="••••••••" class="finput"/></div></div>
+                <button class="create-btn">Update Password</button>
+              </div>
+              <hr class="sdivider"/>
+              <div class="settings-list">
+                <div class="srow"><div><h4>Two-Factor Authentication</h4><p>Add an extra layer of security to your account</p></div><label class="toggle"><input type="checkbox"/><span class="tslider"></span></label></div>
+                <div class="srow"><div><h4>Session Timeout</h4><p>Automatically log out after inactivity</p></div><select class="fsel small"><option>30 minutes</option><option>1 hour</option><option>4 hours</option><option>Never</option></select></div>
+              </div>
+            </div>
+          </div>
+
+          <div class="stab-panel" id="tab-system">
+            <div class="card settings-card">
+              <div class="settings-list">
+                <div class="srow"><div><h4>Language</h4><p>Select your display language</p></div><select class="fsel small"><option>English</option><option>French</option><option>Spanish</option></select></div>
+                <div class="srow"><div><h4>Timezone</h4><p>Your local timezone for timestamps</p></div><select class="fsel small"><option>UTC+0</option><option>UTC+1</option><option>UTC+2</option><option>UTC-5</option></select></div>
+                <div class="srow"><div><h4>Data Retention</h4><p>How long to keep archived records</p></div><select class="fsel small"><option>1 Year</option><option>2 Years</option><option>Forever</option></select></div>
+                <div class="srow"><div><h4>Compact View</h4><p>Reduce spacing for denser data tables</p></div><label class="toggle"><input type="checkbox"/><span class="tslider"></span></label></div>
+              </div>
+            </div>
+          </div>
+        </section>
+
+      </div><!-- /pages-container -->
+    </main>
+  </div>
+
+  <script src="app.js"></script>
+</body>
+</html>
