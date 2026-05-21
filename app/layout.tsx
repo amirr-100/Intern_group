@@ -2,6 +2,7 @@ import './globals.css'
 import type { Metadata } from 'next'
 import { AuthProvider } from '@/lib/AuthContext'
 
+
 export const metadata: Metadata = {
   title: 'Smart Attendance System',
   description: 'Secure QR attendance for events and organizations',

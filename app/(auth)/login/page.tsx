@@ -1,4 +1,4 @@
-﻿'use client'
+﻿﻿'use client'
 import { useState } from 'react'
 import { supabase } from '@/lib/supabase'
 import { useRouter } from 'next/navigation'
@@ -16,47 +16,140 @@ export default function LoginPage() {
     setLoading(true)
 
     try {
-      const { data, error } = await supabase.auth.signInWithPassword({ email, password })
-      if (error) {
-        setError(error.message)
+      const { error: signInError } = await supabase.auth.signInWithPassword({ email, password })
+      if (signInError) {
+        setError(signInError.message)
+        setLoading(false)
+        return
+      }
+
+      const { data: { user } } = await supabase.auth.getUser()
+      if (!user) {
+        setError('Unable to retrieve session. Please try again.')
+        setLoading(false)
+        return
+      }
+
+      const { data: profile } = await supabase
+        .from('profiles')
+        .select('is_first_login')
+        .eq('id', user.id)
+        .maybeSingle()
+
+      if (!profile || profile.is_first_login) {
+        router.push('/first-login')
       } else {
-        // Log success to see what we got
-        console.log('Login success:', data)
         router.push('/admin/dashboard')
       }
     } catch (err) {
-      setError('Unexpected error: ' + JSON.stringify(err))
+      setError('An unexpected error occurred. Please try again.')
+      console.error(err)
     } finally {
       setLoading(false)
     }
   }
 
   return (
-    <div className="auth-page">
-      <div className="auth-card">
-        <div className="auth-logo">
-          <div className="logo-mark">📋</div>
-          <div>
-            <h1>Smart Attendance</h1>
-            <p>Secure QR check‑in for your events</p>
+    <div className="min-h-screen flex">
+      {/* Left – Brand Panel (hidden on small screens) */}
+      <div className="hidden lg:flex lg:w-1/2 relative overflow-hidden bg-gradient-to-br from-indigo-600 via-indigo-700 to-purple-800">
+        {/* Decorative background shapes */}
+        <div className="absolute inset-0 opacity-10">
+          <div className="absolute -top-24 -left-24 w-96 h-96 bg-white rounded-full blur-3xl" />
+          <div className="absolute bottom-10 right-10 w-80 h-80 bg-white rounded-full blur-3xl" />
+          <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[500px] h-[500px] border border-white/20 rounded-full" />
+          <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[400px] h-[400px] border border-white/10 rounded-full" />
+        </div>
+
+        <div className="relative z-10 flex flex-col justify-center items-center text-white px-16 text-center">
+          {/* Logo with pulse animation */}
+          <div className="mb-8 relative">
+            <div className="w-20 h-20 bg-white/20 backdrop-blur-md rounded-2xl flex items-center justify-center text-4xl shadow-2xl">
+              📋
+            </div>
+            <span className="absolute -top-1 -right-1 w-4 h-4 bg-green-400 rounded-full animate-pulse" />
+          </div>
+
+          <h1 className="text-4xl font-bold tracking-tight mb-4">Smart Attendance</h1>
+          <p className="text-indigo-200 text-lg max-w-sm">
+            Secure QR check‑in for your events, meetings, and workshops.
+          </p>
+
+          {/* Bottom caption */}
+          <div className="absolute bottom-10 text-sm text-indigo-300">
+            © {new Date().getFullYear()} Smart Attendance
           </div>
         </div>
-        <h2>Welcome back</h2>
-        <p className="subtitle">Sign in to your admin account</p>
-        {error && <div className="auth-error">{error}</div>}
-        <form onSubmit={handleLogin}>
-          <div className="form-group">
-            <label>Email</label>
-            <input type="email" className="input" placeholder="admin@example.com" value={email} onChange={(e) => setEmail(e.target.value)} required />
+      </div>
+
+      {/* Right – Form Panel */}
+      <div className="w-full lg:w-1/2 flex items-center justify-center px-6 py-12 bg-gray-50">
+        <div className="w-full max-w-md">
+          {/* Mobile logo (visible only on small screens) */}
+          <div className="lg:hidden text-center mb-8">
+            <div className="inline-flex items-center justify-center w-14 h-14 bg-indigo-100 rounded-2xl text-2xl mb-3">
+              📋
+            </div>
+            <h2 className="text-2xl font-bold text-gray-800">Smart Attendance</h2>
+            <p className="text-sm text-gray-500 mt-1">Secure QR check‑in for your events</p>
           </div>
-          <div className="form-group">
-            <label>Password</label>
-            <input type="password" className="input" placeholder="••••••••" value={password} onChange={(e) => setPassword(e.target.value)} required />
+
+          <div className="bg-white rounded-2xl shadow-xl p-8 border border-gray-100">
+            <h2 className="text-2xl font-bold text-gray-800 mb-1">Welcome back</h2>
+            <p className="text-gray-500 mb-8">Sign in to your admin account</p>
+
+            {error && (
+              <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-lg mb-6 text-sm flex items-center gap-2">
+                <svg className="w-4 h-4 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                </svg>
+                {error}
+              </div>
+            )}
+
+            <form onSubmit={handleLogin} className="space-y-5">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1.5">Email</label>
+                <input
+                  type="email"
+                  value={email}
+                  onChange={(e) => setEmail(e.target.value)}
+                  className="w-full border border-gray-200 rounded-xl px-4 py-3 text-gray-700 placeholder-gray-400 focus:ring-2 focus:ring-indigo-500 focus:border-transparent outline-none transition-shadow hover:shadow-sm"
+                  placeholder="admin@example.com"
+                  required
+                />
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1.5">Password</label>
+                <input
+                  type="password"
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                  className="w-full border border-gray-200 rounded-xl px-4 py-3 text-gray-700 placeholder-gray-400 focus:ring-2 focus:ring-indigo-500 focus:border-transparent outline-none transition-shadow hover:shadow-sm"
+                  placeholder="••••••••"
+                  required
+                />
+              </div>
+
+              <button
+                type="submit"
+                disabled={loading}
+                className="w-full bg-indigo-600 text-white py-3 rounded-xl font-semibold hover:bg-indigo-700 transition-all disabled:opacity-50 disabled:cursor-not-allowed shadow-lg shadow-indigo-200 hover:shadow-indigo-300/50"
+              >
+                {loading ? (
+                  <span className="flex items-center justify-center gap-2">
+                    <svg className="animate-spin h-4 w-4" viewBox="0 0 24 24">
+                      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" fill="none" />
+                      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+                    </svg>
+                    Signing in…
+                  </span>
+                ) : 'Sign In'}
+              </button>
+            </form>
           </div>
-          <button type="submit" className="btn btn-primary w-full" disabled={loading}>
-            {loading ? 'Signing in…' : 'Sign In'}
-          </button>
-        </form>
+        </div>
       </div>
     </div>
   )
