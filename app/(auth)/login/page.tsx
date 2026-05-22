@@ -2,6 +2,7 @@
 import { useState } from 'react'
 import { supabase } from '@/lib/supabase'
 import { useRouter } from 'next/navigation'
+import Link from 'next/link'
 
 export default function LoginPage() {
   const [email, setEmail] = useState('')
@@ -19,22 +20,28 @@ export default function LoginPage() {
       const { error: signInError } = await supabase.auth.signInWithPassword({ email, password })
       if (signInError) {
         setError(signInError.message)
-        setLoading(false)
         return
       }
 
-      const { data: { user } } = await supabase.auth.getUser()
-      if (!user) {
+      // Always call getUser() after signIn — session is now set
+      const { data: { user }, error: userError } = await supabase.auth.getUser()
+      if (userError || !user) {
         setError('Unable to retrieve session. Please try again.')
-        setLoading(false)
         return
       }
 
-      const { data: profile } = await supabase
+      const { data: profile, error: profileError } = await supabase
         .from('profiles')
         .select('is_first_login')
         .eq('id', user.id)
         .maybeSingle()
+
+      if (profileError) {
+        // Profile read failed — could be RLS. Redirect to first-login as fallback.
+        console.error('Profile fetch error:', profileError.message)
+        router.push('/first-login')
+        return
+      }
 
       if (!profile || profile.is_first_login) {
         router.push('/first-login')
@@ -42,8 +49,8 @@ export default function LoginPage() {
         router.push('/admin/dashboard')
       }
     } catch (err) {
-      setError('An unexpected error occurred. Please try again.')
       console.error(err)
+      setError('An unexpected error occurred. Please try again.')
     } finally {
       setLoading(false)
     }
@@ -51,9 +58,8 @@ export default function LoginPage() {
 
   return (
     <div className="min-h-screen flex">
-      {/* Left – Brand Panel (hidden on small screens) */}
+      {/* Left – Brand Panel */}
       <div className="hidden lg:flex lg:w-1/2 relative overflow-hidden bg-gradient-to-br from-indigo-600 via-indigo-700 to-purple-800">
-        {/* Decorative background shapes */}
         <div className="absolute inset-0 opacity-10">
           <div className="absolute -top-24 -left-24 w-96 h-96 bg-white rounded-full blur-3xl" />
           <div className="absolute bottom-10 right-10 w-80 h-80 bg-white rounded-full blur-3xl" />
@@ -62,20 +68,16 @@ export default function LoginPage() {
         </div>
 
         <div className="relative z-10 flex flex-col justify-center items-center text-white px-16 text-center">
-          {/* Logo with pulse animation */}
           <div className="mb-8 relative">
             <div className="w-20 h-20 bg-white/20 backdrop-blur-md rounded-2xl flex items-center justify-center text-4xl shadow-2xl">
               📋
             </div>
             <span className="absolute -top-1 -right-1 w-4 h-4 bg-green-400 rounded-full animate-pulse" />
           </div>
-
           <h1 className="text-4xl font-bold tracking-tight mb-4">Smart Attendance</h1>
           <p className="text-indigo-200 text-lg max-w-sm">
             Secure QR check‑in for your events, meetings, and workshops.
           </p>
-
-          {/* Bottom caption */}
           <div className="absolute bottom-10 text-sm text-indigo-300">
             © {new Date().getFullYear()} Smart Attendance
           </div>
@@ -85,7 +87,7 @@ export default function LoginPage() {
       {/* Right – Form Panel */}
       <div className="w-full lg:w-1/2 flex items-center justify-center px-6 py-12 bg-gray-50">
         <div className="w-full max-w-md">
-          {/* Mobile logo (visible only on small screens) */}
+          {/* Mobile logo */}
           <div className="lg:hidden text-center mb-8">
             <div className="inline-flex items-center justify-center w-14 h-14 bg-indigo-100 rounded-2xl text-2xl mb-3">
               📋
@@ -101,7 +103,8 @@ export default function LoginPage() {
             {error && (
               <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-lg mb-6 text-sm flex items-center gap-2">
                 <svg className="w-4 h-4 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
+                    d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
                 </svg>
                 {error}
               </div>
@@ -149,6 +152,17 @@ export default function LoginPage() {
               </button>
             </form>
           </div>
+
+          {/* ── Switch link ── */}
+          <p className="text-center text-sm text-gray-500 mt-6">
+            Logging in for the first time?{' '}
+            <Link
+              href="/first-login"
+              className="text-indigo-600 font-medium hover:text-indigo-700 hover:underline transition-colors"
+            >
+              Complete your profile →
+            </Link>
+          </p>
         </div>
       </div>
     </div>
