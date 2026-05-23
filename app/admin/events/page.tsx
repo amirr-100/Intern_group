@@ -54,17 +54,49 @@ export default function EventsListPage() {
       const superAdmin = profile?.role === 'super_admin'
       setIsSuperAdmin(superAdmin)
 
-      const query = supabase
+      // RLS already filters for admins — super admin sees all via sa_read_all_events policy
+      const { data } = await supabase
         .from('events')
-        .select(superAdmin
-          ? 'id, name, location, event_date, start_time, end_time, status, is_archived, created_by, profiles(full_name, email)'
-          : 'id, name, location, event_date, start_time, end_time, status, is_archived, created_by'
-        )
+        .select('id, name, location, event_date, start_time, end_time, status, is_archived, created_by')
         .order('event_date', { ascending: false })
 
-      // RLS already filters for admins — super admin sees all via sa_read_all_events policy
-      const { data, error } = await query
-      if (!error) setEvents((data as unknown as EventRow[]) || [])
+      const { data: profilesData } = superAdmin
+        ? await supabase.from('profiles').select('id, full_name, email')
+        : { data: null }
+
+      // Auto-archive events whose date has passed
+      const today = new Date().toISOString().split('T')[0]
+      // Merge profiles into events for super admin view
+      const merged = ((data as unknown as EventRow[]) ?? []).map(e => ({
+        ...e,
+        profiles: profilesData?.find(p => p.id === e.created_by) ?? null,
+      }))
+
+      const toArchive = merged
+        .filter(e => e.event_date < today && e.status !== 'archived' && e.status !== 'completed')
+        .map(e => e.id)
+
+      if (toArchive.length > 0) {
+        await supabase
+          .from('events')
+          .update({ status: 'archived' })
+          .in('id', toArchive)
+
+        // Re-fetch after archiving
+        const { data: refreshed } = await supabase
+          .from('events')
+          .select('id, name, location, event_date, start_time, end_time, status, is_archived, created_by')
+          .order('event_date', { ascending: false })
+
+        const remerged = ((refreshed as unknown as EventRow[]) ?? []).map(e => ({
+          ...e,
+          profiles: profilesData?.find(p => p.id === e.created_by) ?? null,
+        }))
+        setEvents(remerged)
+      } else {
+        setEvents(merged)
+      }
+
       setLoading(false)
     }
     load()

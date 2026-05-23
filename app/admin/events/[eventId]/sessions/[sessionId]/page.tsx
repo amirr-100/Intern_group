@@ -106,7 +106,15 @@ export default function LiveSessionPage() {
 
   // ── QR generation (no created_by column) ─────────────────────────────────
   const generateToken = useCallback(async () => {
+    // Deactivate old tokens for this session
+    await supabase
+      .from('qr_tokens')
+      .update({ is_active: false })
+      .eq('session_id', sessionId)
+      .eq('is_active', true)
+
     const token = crypto.randomUUID()
+    // Set expiry to 24h – actual validity is controlled by session status
     const expiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString()
 
     const { error } = await supabase.from('qr_tokens').insert({
