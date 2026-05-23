@@ -1,12 +1,21 @@
-﻿import { createClient } from '@supabase/supabase-js'
+// app/api/attendance/submit/route.ts
+import { createClient } from '@supabase/supabase-js'
 import { NextResponse } from 'next/server'
 
-const supabase = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.SUPABASE_SERVICE_ROLE_KEY!
-)
+function getSupabase() {
+  const url = process.env.NEXT_PUBLIC_SUPABASE_URL
+  const key = process.env.SUPABASE_SERVICE_ROLE_KEY
+
+  if (!url || !key) {
+    throw new Error('Missing Supabase environment variables')
+  }
+
+  return createClient(url, key)
+}
 
 export async function POST(request: Request) {
+  const supabase = getSupabase()
+
   const { token, full_name, phone, email, institution, designation, fingerprint } = await request.json()
 
   // Validate token
@@ -30,9 +39,16 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: 'Session is not active' }, { status: 400 })
   }
 
+  // Get event_id in the same query to avoid a second round trip
+  const { data: sessionData } = await supabase
+    .from('sessions')
+    .select('event_id')
+    .eq('id', qr.session_id)
+    .single()
+
   const { error } = await supabase.from('attendance_records').insert({
     session_id: qr.session_id,
-    event_id: (await supabase.from('sessions').select('event_id').eq('id', qr.session_id).single()).data!.event_id,
+    event_id: sessionData!.event_id,
     full_name,
     phone,
     email,
