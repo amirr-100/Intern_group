@@ -66,12 +66,10 @@ export default function LiveSessionPage() {
     }
   }, [sessionId])
 
-  // Initial load
+  // Initial load — run all three in parallel for speed
   useEffect(() => {
     const load = async () => {
-      await fetchSession()
-      await fetchSummary()
-      await fetchActiveToken()
+      await Promise.all([fetchSession(), fetchSummary(), fetchActiveToken()])
     }
     load()
   }, [fetchSession, fetchSummary, fetchActiveToken])
@@ -262,12 +260,22 @@ export default function LiveSessionPage() {
               <div className="p-5 bg-white border-2 border-gray-100 rounded-3xl shadow-sm">
                 <QRCode value={qrUrl} size={190} />
               </div>
-              <button onClick={copyLink}
-                className={`w-[210px] flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl border text-sm font-medium transition ${
-                  copied ? 'bg-green-50 border-green-200 text-green-700' : 'bg-white border-gray-200 text-gray-700 hover:bg-gray-50'
-                }`}>
-                {copied ? '✓ Link copied!' : 'Copy check-in link'}
-              </button>
+              <div className="flex flex-col gap-2 w-[210px]">
+                <button onClick={copyLink}
+                  className={`flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl border text-sm font-medium transition ${
+                    copied ? 'bg-green-50 border-green-200 text-green-700' : 'bg-white border-gray-200 text-gray-700 hover:bg-gray-50'
+                  }`}>
+                  {copied ? '✓ Link copied!' : 'Copy check-in link'}
+                </button>
+                <button
+                  onClick={() => window.open(`/qr-display?token=${qrUrl.split('token=')[1]}`, '_blank')}
+                  className="flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl border border-indigo-200 bg-indigo-50 text-indigo-700 text-sm font-medium hover:bg-indigo-100 transition">
+                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9.75 17L9 20l-1 1h8l-1-1-.75-3M3 13h18M5 17h14a2 2 0 002-2V5a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z"/>
+                  </svg>
+                  Display QR on screen
+                </button>
+              </div>
             </div>
             <div className="flex-1 min-w-0">
               <h3 className="text-sm font-semibold text-gray-900 mb-4">How attendees check in</h3>

@@ -89,6 +89,25 @@ export default function SessionsPage() {
           tokenMap[t.session_id] = t
         }
       })
+
+      // Auto-generate token for any active session that has none
+      for (const sess of activeSessions) {
+        if (!tokenMap[sess.id]) {
+          const newToken = crypto.randomUUID()
+          const expiry = new Date()
+          expiry.setHours(expiry.getHours() + 24)
+          const { error } = await supabase.from('qr_tokens').insert({
+            session_id: sess.id,
+            token: newToken,
+            expires_at: expiry.toISOString(),
+            is_active: true,
+          })
+          if (!error) {
+            tokenMap[sess.id] = { token: newToken, session_id: sess.id }
+          }
+        }
+      }
+
       setActiveTokens(tokenMap)
     }
 
@@ -222,7 +241,7 @@ export default function SessionsPage() {
                   <div className="divide-y divide-gray-50">
                     {eventSessions.map(session => {
                       const token = activeTokens[session.id]
-                      const qrUrl = token ? `${typeof window !== 'undefined' ? window.location.origin : ''}/attend?token=${token.token}` : ''
+                      const qrUrl = token && typeof window !== 'undefined' ? `${window.location.origin}/attend?token=${token.token}` : ''
                       const isActive = session.status === 'active'
                       const isEnded = session.status === 'ended'
 
@@ -283,15 +302,25 @@ export default function SessionsPage() {
                                 <div className="bg-white border border-gray-200 rounded-lg px-3 py-2 text-xs text-gray-500 font-mono break-all mb-2">
                                   {qrUrl}
                                 </div>
-                                <button
-                                  onClick={() => copyLink(token.token, session.id)}
-                                  className={`text-xs font-medium px-3 py-1.5 rounded-lg transition ${
-                                    copied === session.id
-                                      ? 'bg-green-100 text-green-700'
-                                      : 'bg-indigo-600 text-white hover:bg-indigo-700'
-                                  }`}>
-                                  {copied === session.id ? '✓ Copied!' : 'Copy check-in link'}
-                                </button>
+                                <div className="flex gap-2 flex-wrap">
+                                  <button
+                                    onClick={() => copyLink(token.token, session.id)}
+                                    className={`text-xs font-medium px-3 py-1.5 rounded-lg transition ${
+                                      copied === session.id
+                                        ? 'bg-green-100 text-green-700'
+                                        : 'bg-indigo-600 text-white hover:bg-indigo-700'
+                                    }`}>
+                                    {copied === session.id ? '✓ Copied!' : 'Copy check-in link'}
+                                  </button>
+                                  <button
+                                    onClick={() => window.open(`/qr-display?token=${token.token}`, '_blank')}
+                                    className="text-xs font-medium px-3 py-1.5 rounded-lg border border-indigo-200 text-indigo-700 bg-indigo-50 hover:bg-indigo-100 transition flex items-center gap-1">
+                                    <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9.75 17L9 20l-1 1h8l-1-1-.75-3M3 13h18M5 17h14a2 2 0 002-2V5a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z"/>
+                                    </svg>
+                                    Display QR
+                                  </button>
+                                </div>
                               </div>
                             </div>
                           )}

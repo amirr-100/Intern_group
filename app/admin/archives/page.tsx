@@ -48,14 +48,14 @@ export default function ArchivesPage() {
 
     let query = supabase
       .from('events')
-      .select('id, name, event_date, location, created_at')
-      .eq('is_archived', true)
+      .select('id, name, event_date, location, created_at, status')
+      .or('status.eq.archived,status.eq.completed')
       .order('event_date', { ascending: false })
 
     if (!isSuperAdmin) query = query.eq('created_by', profile!.id)
 
     const { data: events } = await query
-    const eventsList = (events ?? []) as ArchivedEvent[]
+    const eventsList = (events ?? []) as unknown as ArchivedEvent[]
 
     if (eventsList.length > 0) {
       const eventIds = eventsList.map(e => e.id)
@@ -117,7 +117,7 @@ export default function ArchivesPage() {
 
   // ── Restore event ──────────────────────────────────────────────────────────
   const unarchiveEvent = async (id: string) => {
-    await supabase.from('events').update({ is_archived: false }).eq('id', id)
+    await supabase.from('events').update({ status: 'upcoming', is_archived: false }).eq('id', id)
     setArchivedEvents(prev => prev.filter(e => e.id !== id))
     if (selectedEvent?.id === id) setSelectedEvent(null)
   }
