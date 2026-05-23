@@ -48,7 +48,7 @@ function AttendForm() {
         .eq('token', token)
         .single()
 
-      if (!qr || !qr.is_active) { setPageState('qr_expired'); return }
+      if (!qr) { setPageState('qr_expired'); return }
 
       const { data: sess } = await supabase
         .from('sessions')
@@ -60,8 +60,8 @@ function AttendForm() {
       if (sess.status === 'ended')  { setPageState('closed');     return }
       if (sess.status !== 'active') { setPageState('qr_expired'); return }
 
-      // Only check token expiry AFTER confirming session is active
-      if (new Date(qr.expires_at) < new Date()) { setPageState('qr_expired'); return }
+      // Token expiry is intentionally NOT checked here.
+      // Session status is the sole gate — only admin ending the session closes it.
 
       setSession({ id: sess.id, name: sess.name, event_id: sess.event_id })
 

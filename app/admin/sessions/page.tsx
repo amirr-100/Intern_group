@@ -5,7 +5,6 @@ import { useAuth } from '@/lib/AuthContext'
 import { QRCodeSVG } from 'qrcode.react'
 import Link from 'next/link'
 
-// ── Types ──────────────────────────────────────────────────────────────────────
 interface EventRow {
   id: string
   name: string
@@ -15,180 +14,161 @@ interface EventRow {
   status: string
 }
 
-interface SessionWithToken {
-  session_id: string
+interface SessionRow {
+  id: string
+  name: string
+  status: 'scheduled' | 'active' | 'ended'
+  event_id: string
+}
+
+interface ActiveToken {
   token: string
+  session_id: string
 }
 
-// ── Pure helper (matches actual database columns) ─────────────────────────────
-async function generateTokenForEvent(eventId: string, profileId: string) {
-  // 1. Create a session if none exists
-  const { data: sessions } = await supabase
-    .from('sessions')
-    .select('id')
-    .eq('event_id', eventId)
-    .in('status', ['active', 'scheduled'])   // ← 'scheduled' not 'upcoming'
-    .limit(1)
-
-  let sessionId: string
-
-  if (sessions && sessions.length > 0) {
-    sessionId = sessions[0].id
-  } else {
-    const { data: newSession, error: sessionError } = await supabase
-      .from('sessions')
-      .insert({
-        event_id: eventId,
-        name: 'Check-in Session',
-        status: 'scheduled',                 // ← valid enum value
-        qr_refresh_interval: 10,
-        created_by: profileId,
-        // no start_time column
-      })
-      .select('id')
-      .single()
-
-    if (sessionError) throw sessionError
-    sessionId = newSession.id
-  }
-
-  // 2. Generate a new QR token (valid for 24 hours)
-  const token = crypto.randomUUID()
-  const expiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString()
-
-  const { error: tokenError } = await supabase
-    .from('qr_tokens')
-    .insert({
-      session_id: sessionId,
-      token,
-      expires_at: expiresAt,
-      is_active: true,
-      // no created_by column
-    })
-
-  if (tokenError) throw tokenError
-
-  return { sessionId, token }
-}
-
-// ── Page Component ────────────────────────────────────────────────────────────
 export default function SessionsPage() {
   const { profile, loading: authLoading } = useAuth()
   const [events, setEvents] = useState<EventRow[]>([])
-  const [tokens, setTokens] = useState<Record<string, SessionWithToken>>({})
+  const [sessions, setSessions] = useState<Record<string, SessionRow[]>>({})
+  const [activeTokens, setActiveTokens] = useState<Record<string, ActiveToken>>({})
   const [loading, setLoading] = useState(true)
-  const [generating, setGenerating] = useState<string | null>(null)
+  const [starting, setStarting] = useState<string | null>(null)
+  const [ending, setEnding] = useState<string | null>(null)
+  const [copied, setCopied] = useState<string | null>(null)
 
-  const fetchEvents = useCallback(async () => {
+  const fetchAll = useCallback(async () => {
     if (!profile) return
-
     const isSuperAdmin = profile.role === 'super_admin'
-    let query = supabase
+
+    // Fetch today's and upcoming events only
+    const today = new Date().toISOString().split('T')[0]
+    let evQuery = supabase
       .from('events')
       .select('id, name, event_date, start_time, location, status')
-      .in('status', ['upcoming', 'active'])
+      .gte('event_date', today)
+      .not('status', 'eq', 'archived')
       .order('event_date', { ascending: true })
 
-    if (!isSuperAdmin) query = query.eq('created_by', profile.id)
+    if (!isSuperAdmin) evQuery = evQuery.eq('created_by', profile.id)
 
-    const { data } = await query
-    setEvents((data as EventRow[]) ?? [])
+    const { data: evData } = await evQuery
+    const eventList = (evData as EventRow[]) ?? []
+    setEvents(eventList)
+
+    if (eventList.length === 0) { setLoading(false); return }
+
+    // Fetch sessions for all events
+    const eventIds = eventList.map(e => e.id)
+    const { data: sessData } = await supabase
+      .from('sessions')
+      .select('id, name, status, event_id')
+      .in('event_id', eventIds)
+      .order('created_at', { ascending: true })
+
+    const sessMap: Record<string, SessionRow[]> = {}
+    ;(sessData ?? []).forEach((s: SessionRow) => {
+      if (!sessMap[s.event_id]) sessMap[s.event_id] = []
+      sessMap[s.event_id].push(s)
+    })
+    setSessions(sessMap)
+
+    // Fetch active tokens for active sessions
+    const activeSessions = (sessData ?? []).filter((s: SessionRow) => s.status === 'active')
+    if (activeSessions.length > 0) {
+      const activeSessionIds = activeSessions.map((s: SessionRow) => s.id)
+      const { data: tokenData } = await supabase
+        .from('qr_tokens')
+        .select('token, session_id')
+        .in('session_id', activeSessionIds)
+        .eq('is_active', true)
+        .order('created_at', { ascending: false })
+
+      const tokenMap: Record<string, ActiveToken> = {}
+      ;(tokenData ?? []).forEach((t: ActiveToken) => {
+        if (!tokenMap[t.session_id]) {
+          tokenMap[t.session_id] = t
+        }
+      })
+      setActiveTokens(tokenMap)
+    }
+
+    setLoading(false)
   }, [profile])
 
-  const fetchTokens = useCallback(async (events: EventRow[]) => {
-    if (events.length === 0) return
-    const tokenMap: Record<string, SessionWithToken> = {}
-
-    for (const ev of events) {
-      const { data: sessions } = await supabase
-        .from('sessions')
-        .select('id')
-        .eq('event_id', ev.id)
-        .in('status', ['active', 'scheduled'])   // ← 'scheduled' not 'upcoming'
-        .order('created_at', { ascending: true }) // ← 'created_at' not 'start_time'
-        .limit(1)
-
-      if (!sessions || sessions.length === 0) continue
-
-      const { data: tokenRows } = await supabase
-        .from('qr_tokens')
-        .select('token, expires_at, is_active')
-        .eq('session_id', sessions[0].id)
-        .eq('is_active', true)
-        .gt('expires_at', new Date().toISOString())
-        .order('created_at', { ascending: false })
-        .limit(1)
-
-      if (tokenRows && tokenRows.length > 0) {
-        tokenMap[ev.id] = {
-          session_id: sessions[0].id,
-          token: tokenRows[0].token,
-        }
-      }
-    }
-    setTokens(tokenMap)
-  }, [])
-
-  // ── Effects ──────────────────────────────────────────────────────────────
   useEffect(() => {
     if (!profile) return
+    const run = async () => { await fetchAll() }
+    run()
+  }, [profile, fetchAll])
 
-    let cancelled = false
-    const load = async () => {
-      setLoading(true)
-      await fetchEvents()
-      if (!cancelled) setLoading(false)
-    }
-
-    load()
-    return () => { cancelled = true }
-  }, [profile, fetchEvents])
-
-  useEffect(() => {
-    if (events.length === 0) return
-
-    let cancelled = false
-    const loadTokens = async () => {
-      await fetchTokens(events)
-    }
-
-    loadTokens()
-    return () => { cancelled = true }
-  }, [events, fetchTokens])
-
-  // ── Handlers ─────────────────────────────────────────────────────────────
-  const handleGenerateToken = useCallback(async (eventId: string) => {
-    setGenerating(eventId)
+  const startSession = async (session: SessionRow) => {
+    setStarting(session.id)
     try {
-      const { sessionId, token } = await generateTokenForEvent(eventId, profile!.id)
+      // Start the session
+      await supabase
+        .from('sessions')
+        .update({ status: 'active', started_at: new Date().toISOString() })
+        .eq('id', session.id)
 
-      setTokens(prev => ({
-        ...prev,
-        [eventId]: { session_id: sessionId, token },
-      }))
-    } catch (err: unknown) {
-      console.error('Generate token error:', err)
-      alert('Error generating token: ' + (err instanceof Error ? err.message : 'Unknown error'))
+      // Generate one QR token valid for 24h (session end is the real gate)
+      const token = crypto.randomUUID()
+      const expiry = new Date()
+      expiry.setHours(expiry.getHours() + 24)
+      await supabase.from('qr_tokens').insert({
+        session_id: session.id,
+        token,
+        expires_at: expiry.toISOString(),
+        is_active: true,
+      })
+
+      await fetchAll()
+    } catch (err) {
+      console.error(err)
+      alert('Failed to start session')
     } finally {
-      setGenerating(null)
+      setStarting(null)
     }
-  }, [profile])
-
-  const getCheckInLink = useCallback((token: string) => {
-    return `${window.location.origin}/attend?token=${token}`
-  }, [])
-
-  const copyToClipboard = (text: string) => {
-    navigator.clipboard.writeText(text)
-    alert('Link copied!')
   }
 
-  // ── Loading / Empty states ───────────────────────────────────────────────
+  const endSession = async (session: SessionRow) => {
+    if (!confirm('End this session? The QR code will stop working immediately.')) return
+    setEnding(session.id)
+    try {
+      // Deactivate all tokens
+      await supabase
+        .from('qr_tokens')
+        .update({ is_active: false })
+        .eq('session_id', session.id)
+
+      // End the session
+      await supabase
+        .from('sessions')
+        .update({ status: 'ended', ended_at: new Date().toISOString() })
+        .eq('id', session.id)
+
+      await fetchAll()
+    } catch (err) {
+      console.error(err)
+    } finally {
+      setEnding(null)
+    }
+  }
+
+  const copyLink = (token: string, sessionId: string) => {
+    const url = `${window.location.origin}/attend?token=${token}`
+    navigator.clipboard.writeText(url)
+    setCopied(sessionId)
+    setTimeout(() => setCopied(null), 2000)
+  }
+
   if (authLoading || loading) {
     return (
       <div className="flex items-center justify-center py-24 text-gray-400">
-        <div className="animate-spin text-3xl mb-3">⏳</div>
-        <p className="text-sm">Loading sessions…</p>
+        <svg className="animate-spin h-5 w-5 mr-2" viewBox="0 0 24 24" fill="none">
+          <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"/>
+          <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"/>
+        </svg>
+        Loading sessions…
       </div>
     )
   }
@@ -196,57 +176,145 @@ export default function SessionsPage() {
   return (
     <div>
       <div className="mb-8">
-        <h1 className="text-2xl font-bold text-gray-800">Active Sessions</h1>
-        <p className="text-sm text-gray-500 mt-1">Share check‑in links and QR codes</p>
+        <h1 className="text-2xl font-bold text-gray-800">Sessions</h1>
+        <p className="text-sm text-gray-500 mt-1">Start a session to generate a QR code for attendance</p>
       </div>
 
       {events.length === 0 ? (
-        <div className="text-center py-16 text-gray-400">No upcoming or active events found.</div>
+        <div className="text-center py-16 bg-white rounded-2xl border border-gray-200">
+          <p className="text-gray-500 text-sm mb-3">No upcoming events found.</p>
+          <Link href="/admin/events/new" className="text-indigo-600 text-sm hover:underline">
+            Create an event →
+          </Link>
+        </div>
       ) : (
-        <div className="grid gap-6 sm:grid-cols-2 lg:grid-cols-3">
+        <div className="space-y-6">
           {events.map(event => {
-            const tokenData = tokens[event.id]
-            const link = tokenData ? getCheckInLink(tokenData.token) : null
+            const eventSessions = sessions[event.id] ?? []
             return (
-              <div key={event.id} className="bg-white rounded-2xl border border-gray-200 p-5 shadow-sm flex flex-col">
-                <Link href={`/admin/events/${event.id}`} className="hover:underline">
-                  <h3 className="text-lg font-semibold text-gray-900">{event.name}</h3>
-                </Link>
-                <p className="text-sm text-gray-500 mt-1">{event.location}</p>
-                <p className="text-xs text-gray-400 mt-1">
-                  {new Date(event.event_date).toLocaleDateString('en-GB', { day:'numeric', month:'short', year:'numeric' })}
-                  {' · '}{event.start_time?.slice(0,5)}
-                </p>
+              <div key={event.id} className="bg-white rounded-2xl border border-gray-200 shadow-sm overflow-hidden">
+                {/* Event header */}
+                <div className="px-5 py-4 border-b border-gray-100 flex items-center justify-between">
+                  <div>
+                    <Link href={`/admin/events/${event.id}`} className="font-semibold text-gray-900 hover:text-indigo-600 transition">
+                      {event.name}
+                    </Link>
+                    <p className="text-xs text-gray-400 mt-0.5">
+                      {new Date(event.event_date).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })}
+                      {' · '}{event.start_time?.slice(0, 5)} · {event.location}
+                    </p>
+                  </div>
+                  <Link href={`/admin/events/${event.id}`}
+                    className="text-xs text-indigo-600 hover:underline shrink-0">
+                    Manage →
+                  </Link>
+                </div>
 
-                {link ? (
-                  <>
-                    <div className="flex justify-center my-5">
-                      <QRCodeSVG value={link} size={150} />
-                    </div>
-                    <div className="mt-auto flex flex-col gap-2">
-                      <input
-                        readOnly
-                        value={link}
-                        className="text-xs bg-gray-50 border border-gray-200 rounded-lg px-3 py-2 text-gray-600 truncate"
-                      />
-                      <button
-                        onClick={() => copyToClipboard(link)}
-                        className="w-full bg-indigo-600 text-white py-2.5 rounded-xl text-sm font-medium hover:bg-indigo-700 transition"
-                      >
-                        Copy Check‑in Link
-                      </button>
-                    </div>
-                  </>
+                {/* Sessions */}
+                {eventSessions.length === 0 ? (
+                  <div className="px-5 py-6 text-center text-sm text-gray-400">
+                    No sessions yet.{' '}
+                    <Link href={`/admin/events/${event.id}`} className="text-indigo-600 hover:underline">
+                      Create one →
+                    </Link>
+                  </div>
                 ) : (
-                  <div className="flex flex-col items-center justify-center flex-1 gap-4">
-                    <p className="text-sm text-gray-500">No active token</p>
-                    <button
-                      onClick={() => handleGenerateToken(event.id)}
-                      disabled={generating === event.id}
-                      className="bg-indigo-600 text-white px-4 py-2 rounded-xl text-sm font-medium hover:bg-indigo-700 disabled:opacity-50"
-                    >
-                      {generating === event.id ? 'Creating…' : 'Generate QR Link'}
-                    </button>
+                  <div className="divide-y divide-gray-50">
+                    {eventSessions.map(session => {
+                      const token = activeTokens[session.id]
+                      const qrUrl = token ? `${typeof window !== 'undefined' ? window.location.origin : ''}/attend?token=${token.token}` : ''
+                      const isActive = session.status === 'active'
+                      const isEnded = session.status === 'ended'
+
+                      return (
+                        <div key={session.id} className="px-5 py-4">
+                          <div className="flex items-center justify-between gap-4 flex-wrap">
+                            <div className="flex items-center gap-3">
+                              <span className={`w-2 h-2 rounded-full shrink-0 ${
+                                isActive ? 'bg-green-500 animate-pulse' :
+                                isEnded ? 'bg-gray-300' : 'bg-blue-400'
+                              }`} />
+                              <div>
+                                <p className="text-sm font-medium text-gray-800">{session.name}</p>
+                                <p className={`text-xs mt-0.5 ${
+                                  isActive ? 'text-green-600' :
+                                  isEnded ? 'text-gray-400' : 'text-blue-500'
+                                }`}>
+                                  {isActive ? 'Live — accepting check-ins' :
+                                   isEnded ? 'Ended' : 'Not started'}
+                                </p>
+                              </div>
+                            </div>
+
+                            <div className="flex items-center gap-2">
+                              {session.status === 'scheduled' && (
+                                <button
+                                  onClick={() => startSession(session)}
+                                  disabled={starting === session.id}
+                                  className="inline-flex items-center gap-1.5 bg-green-600 text-white px-3 py-1.5 rounded-lg text-xs font-semibold hover:bg-green-700 transition disabled:opacity-50">
+                                  {starting === session.id ? 'Starting…' : '▶ Start Session'}
+                                </button>
+                              )}
+                              {isActive && (
+                                <button
+                                  onClick={() => endSession(session)}
+                                  disabled={ending === session.id}
+                                  className="inline-flex items-center gap-1.5 bg-red-600 text-white px-3 py-1.5 rounded-lg text-xs font-semibold hover:bg-red-700 transition disabled:opacity-50">
+                                  {ending === session.id ? 'Ending…' : '■ End Session'}
+                                </button>
+                              )}
+                              <Link
+                                href={`/admin/events/${event.id}/sessions/${session.id}/attendance`}
+                                className="border border-gray-200 text-gray-600 px-3 py-1.5 rounded-lg text-xs font-medium hover:bg-gray-50 transition">
+                                Records
+                              </Link>
+                            </div>
+                          </div>
+
+                          {/* QR panel — only shown when active */}
+                          {isActive && qrUrl && (
+                            <div className="mt-4 flex flex-col sm:flex-row items-center gap-5 bg-gray-50 rounded-xl p-4 border border-gray-100">
+                              <div className="bg-white p-3 rounded-xl border border-gray-200 shadow-sm shrink-0">
+                                <QRCodeSVG value={qrUrl} size={140} />
+                              </div>
+                              <div className="flex-1 min-w-0 text-center sm:text-left">
+                                <p className="text-xs font-semibold text-gray-700 mb-1">Live check-in QR</p>
+                                <p className="text-xs text-gray-500 mb-3">This QR stays active until you end the session. Display it on screen or share the link below.</p>
+                                <div className="bg-white border border-gray-200 rounded-lg px-3 py-2 text-xs text-gray-500 font-mono break-all mb-2">
+                                  {qrUrl}
+                                </div>
+                                <button
+                                  onClick={() => copyLink(token.token, session.id)}
+                                  className={`text-xs font-medium px-3 py-1.5 rounded-lg transition ${
+                                    copied === session.id
+                                      ? 'bg-green-100 text-green-700'
+                                      : 'bg-indigo-600 text-white hover:bg-indigo-700'
+                                  }`}>
+                                  {copied === session.id ? '✓ Copied!' : 'Copy check-in link'}
+                                </button>
+                              </div>
+                            </div>
+                          )}
+
+                          {/* Not started state */}
+                          {session.status === 'scheduled' && (
+                            <div className="mt-3 bg-blue-50 border border-blue-100 rounded-xl px-4 py-3 text-xs text-blue-600">
+                              No active session — click <strong>Start Session</strong> to generate a QR code and begin accepting attendance.
+                            </div>
+                          )}
+
+                          {/* Ended state */}
+                          {isEnded && (
+                            <div className="mt-3 bg-gray-50 border border-gray-100 rounded-xl px-4 py-3 text-xs text-gray-500">
+                              Session ended. QR code is deactivated.{' '}
+                              <Link href={`/admin/events/${event.id}/sessions/${session.id}/attendance`} className="text-indigo-600 hover:underline">
+                                View attendance records →
+                              </Link>
+                            </div>
+                          )}
+                        </div>
+                      )
+                    })}
                   </div>
                 )}
               </div>

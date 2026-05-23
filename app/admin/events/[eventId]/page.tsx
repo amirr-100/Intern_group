@@ -340,10 +340,18 @@ export default function EventDetailPage() {
                       Status: {session.status} · Created: {new Date(session.created_at).toLocaleDateString()}
                     </p>
                   </div>
-                  <div className="flex gap-2">
-                    {session.status !== 'ended' && (
+                  <div className="flex gap-2" onClick={e => e.stopPropagation()}>
+                    {session.status === 'scheduled' && (
+                      <Link
+                        href={`/admin/events/${eventId}/sessions/${session.id}`}
+                        className="text-xs bg-green-100 text-green-700 px-2 py-1 rounded-lg hover:bg-green-200"
+                      >
+                        Start
+                      </Link>
+                    )}
+                    {session.status === 'active' && (
                       <button
-                        onClick={(e) => { e.stopPropagation(); handleEndSession(session.id); }}
+                        onClick={() => handleEndSession(session.id)}
                         className="text-xs bg-red-100 text-red-700 px-2 py-1 rounded-lg hover:bg-red-200"
                       >
                         End
@@ -360,32 +368,12 @@ export default function EventDetailPage() {
           <div className="mt-6 border-t pt-4">
             <h3 className="text-md font-semibold mb-3">Session Tools</h3>
             <div className="flex flex-wrap items-center gap-4 mb-4">
-              {checkInLink ? (
-                <div className="flex items-center gap-3">
-                  <QRCodeSVG value={checkInLink} size={120} />
-                  <div>
-                    <input
-                      readOnly
-                      value={checkInLink}
-                      className="text-xs bg-gray-50 border rounded-lg px-2 py-1 w-64"
-                    />
-                    <button
-                      onClick={() => navigator.clipboard.writeText(checkInLink)}
-                      className="mt-1 text-xs text-indigo-600 hover:underline"
-                    >
-                      Copy link
-                    </button>
-                  </div>
-                </div>
-              ) : (
-                <button
-                  onClick={handleGenerateQR}
-                  disabled={generatingQR}
-                  className="bg-indigo-600 text-white px-4 py-2 rounded-xl text-sm font-medium hover:bg-indigo-700 disabled:opacity-50"
-                >
-                  {generatingQR ? 'Generating…' : 'Generate QR Code'}
-                </button>
-              )}
+              <Link
+                href={`/admin/events/${eventId}/sessions/${selectedSessionId}`}
+                className="inline-flex items-center gap-2 bg-indigo-600 text-white px-4 py-2 rounded-xl text-sm font-medium hover:bg-indigo-700 transition"
+              >
+                Open Session →
+              </Link>
             </div>
 
             {/* Attendance list */}
