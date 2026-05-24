@@ -3,7 +3,6 @@ import { createContext, useContext, useEffect, useState } from 'react'
 import { supabase } from './supabase'
 import type { User } from '@supabase/supabase-js'
 
-// Match your actual profiles table shape
 export interface Profile {
   id: string
   email: string
@@ -29,115 +28,53 @@ interface AuthState {
 }
 
 const AuthContext = createContext<AuthState>({
-  user: null,
-  profile: null,
-  loading: true,
-  signOut: async () => {},
+  user: null, profile: null, loading: true, signOut: async () => {},
 })
 
 export const useAuth = () => useContext(AuthContext)
 
 export function AuthProvider({ children }: { children: React.ReactNode }) {
-  const [user, setUser] = useState<User | null>(null)
+  const [user, setUser]       = useState<User | null>(null)
   const [profile, setProfile] = useState<Profile | null>(null)
   const [loading, setLoading] = useState(true)
 
-  // Fetch profile – if it fails, assume we need to re‑authenticate
-  async function fetchProfile(userId: string): Promise<Profile | null> {
-    try {
-      const { data, error } = await supabase
-        .from('profiles')
-        .select('*')
-        .eq('id', userId)
-        .single()
-
-      if (error) {
-        console.error('Profile fetch error:', error.message)
-        return null
-      }
-      return data as Profile
-    } catch (err: unknown) {
-      console.error('Unexpected profile fetch error:', err)
-      return null
-    }
-  }
-
-  // Sign out – clear all state and redirect
   const signOut = async () => {
-    try {
-      await supabase.auth.signOut()
-    } catch (err: unknown) {
-      console.error('SignOut error:', err)
-    } finally {
-      window.location.href = '/login'
-    }
+    await supabase.auth.signOut().catch(console.error)
+    window.location.replace('/login')
   }
 
   useEffect(() => {
     let isMounted = true
 
-    const initSession = async () => {
-      try {
-        const { data: { session }, error } = await supabase.auth.getSession()
-        if (!isMounted) return
-
-        if (error) {
-          console.error('getSession error:', error.message)
-          if (error.message.includes('Refresh Token')) {
-            await signOut()
-          }
-          setLoading(false)
-          return
-        }
-
-        const u = session?.user ?? null
-        setUser(u)
-        if (u) {
-          const p = await fetchProfile(u.id)
-          if (isMounted) setProfile(p)
-        }
-        setLoading(false)
-      } catch (err: unknown) {
-        console.error('Session init error:', err)
-        if (isMounted) {
-          if (err instanceof Error && err.message.includes('Refresh Token')) {
-            await signOut()
-          } else {
-            setLoading(false)
-          }
-        }
-      }
-    }
-
-    initSession()
-
-    // Listen for future auth changes
+    // onAuthStateChange fires INITIAL_SESSION immediately on mount —
+    // no need for a separate getSession() call (that was the double-fetch).
     const { data: { subscription } } = supabase.auth.onAuthStateChange(
       async (event, session) => {
         if (!isMounted) return
 
-        if (event === 'SIGNED_OUT') {
+        if (event === 'SIGNED_OUT' || (!session && event !== 'INITIAL_SESSION')) {
           setUser(null)
           setProfile(null)
           setLoading(false)
           return
         }
 
-        if (
-          event === 'SIGNED_IN' ||
-          event === 'TOKEN_REFRESHED' ||
-          event === 'INITIAL_SESSION'
-        ) {
-          const u = session?.user ?? null
-          setUser(u)
-          if (u) {
-            const p = await fetchProfile(u.id)
-            if (isMounted) setProfile(p)
-          } else {
-            setProfile(null)
-          }
-          setLoading(false)
+        const u = session?.user ?? null
+        setUser(u)
+
+        if (u) {
+          // Use .maybeSingle() so missing profile doesn't throw
+          const { data } = await supabase
+            .from('profiles')
+            .select('*')
+            .eq('id', u.id)
+            .maybeSingle()
+          if (isMounted) setProfile(data as Profile | null)
+        } else {
+          setProfile(null)
         }
+
+        if (isMounted) setLoading(false)
       }
     )
 

@@ -1,245 +1,191 @@
-﻿﻿// app/admin/dashboard/page.tsx
-'use client'
-import { useEffect, useState, Suspense } from 'react'
+﻿﻿'use client'
+import { useEffect, useState } from 'react'
 import { supabase } from '@/lib/supabase'
 import { useAuth } from '@/lib/AuthContext'
-import { useRouter } from 'next/navigation'
 import Link from 'next/link'
 
-interface Stats {
-  totalEvents: number
-  activeSessions: number
-  totalCheckIns: number
-  duplicates: number
-}
+interface Stats { totalEvents: number; activeSessions: number; totalCheckIns: number; duplicates: number }
+interface LiveRecord { id: string; full_name: string; phone: string; method: string; status: string; submitted_at: string; event_id: string }
 
 export default function DashboardPage() {
-  const { profile, loading: authLoading, signOut } = useAuth()
-  const router = useRouter()
-  const [stats, setStats] = useState<Stats>({
-    totalEvents: 0,
-    activeSessions: 0,
-    totalCheckIns: 0,
-    duplicates: 0,
-  })
-  const [dataLoading, setDataLoading] = useState(true)
+  const { profile } = useAuth()
+  const [stats, setStats]       = useState<Stats>({ totalEvents: 0, activeSessions: 0, totalCheckIns: 0, duplicates: 0 })
+  const [live, setLive]         = useState<LiveRecord[]>([])
+  const [statsLoading, setStatsLoading] = useState(true)
 
-  useEffect(() => {
-    if (!authLoading && !profile) {
-      router.push('/login')
+  const fetchStats = async () => {
+    if (!profile) return
+    const isSuperAdmin = profile.role === 'super_admin'
+
+    let myEventIds: string[] | null = null
+    if (!isSuperAdmin) {
+      const { data } = await supabase.from('events').select('id').eq('created_by', profile.id)
+      myEventIds = data?.map(e => e.id) ?? []
     }
-  }, [authLoading, profile, router])
+
+    const [evRes, sessRes, checkRes, dupRes] = await Promise.all([
+      (() => {
+        let q = supabase.from('events').select('id', { count: 'exact', head: true }).neq('status', 'archived')
+        if (myEventIds) q = q.in('id', myEventIds.length ? myEventIds : ['none'])
+        return q
+      })(),
+      (() => {
+        let q = supabase.from('sessions').select('id', { count: 'exact', head: true }).eq('status', 'active')
+        if (myEventIds) q = q.in('event_id', myEventIds.length ? myEventIds : ['none'])
+        return q
+      })(),
+      (() => {
+        let q = supabase.from('attendance_records').select('id', { count: 'exact', head: true })
+        if (myEventIds) q = q.in('event_id', myEventIds.length ? myEventIds : ['none'])
+        return q
+      })(),
+      (() => {
+        let q = supabase.from('attendance_records').select('id', { count: 'exact', head: true }).eq('status', 'duplicate')
+        if (myEventIds) q = q.in('event_id', myEventIds.length ? myEventIds : ['none'])
+        return q
+      })(),
+    ])
+
+    setStats({
+      totalEvents:    evRes.count   ?? 0,
+      activeSessions: sessRes.count ?? 0,
+      totalCheckIns:  checkRes.count ?? 0,
+      duplicates:     dupRes.count  ?? 0,
+    })
+    setStatsLoading(false)
+  }
+
+  const fetchLive = async () => {
+    if (!profile) return
+    let q = supabase
+      .from('attendance_records')
+      .select('id, full_name, phone, method, status, submitted_at, event_id')
+      .order('submitted_at', { ascending: false })
+      .limit(8)
+
+    if (profile.role !== 'super_admin') {
+      const { data } = await supabase.from('events').select('id').eq('created_by', profile.id)
+      const ids = data?.map(e => e.id) ?? []
+      if (ids.length === 0) { setLive([]); return }
+      q = q.in('event_id', ids)
+    }
+    const { data } = await q
+    setLive((data as LiveRecord[]) ?? [])
+  }
 
   useEffect(() => {
     if (!profile) return
-
-    const fetchStats = async () => {
-      setDataLoading(true)
-      const isSuperAdmin = profile.role === 'super_admin'
-
-      // ── Events count ───────────────────────────────────────────
-      // Super admin: all events. Admin: only their own.
-      let eventsQuery = supabase
-        .from('events')
-        .select('id', { count: 'exact', head: true })
-        .eq('is_archived', false)
-
-      if (!isSuperAdmin) {
-        eventsQuery = eventsQuery.eq('created_by', profile.id)
-      }
-      const { count: totalEvents } = await eventsQuery
-
-      // ── Active sessions ────────────────────────────────────────
-      let sessionsQuery = supabase
-        .from('sessions')
-        .select('id', { count: 'exact', head: true })
-        .eq('status', 'active')
-
-      if (!isSuperAdmin) {
-        sessionsQuery = sessionsQuery.eq('created_by', profile.id)
-      }
-      const { count: activeSessions } = await sessionsQuery
-
-      // ── Total check-ins ────────────────────────────────────────
-      let checkInsQuery = supabase
-        .from('attendance_records')
-        .select('id', { count: 'exact', head: true })
-
-      if (!isSuperAdmin) {
-        const { data: myEvents } = await supabase
-          .from('events').select('id').eq('created_by', profile.id)
-        const myEventIds = myEvents?.map(e => e.id) ?? []
-        if (myEventIds.length === 0) {
-          setStats({ totalEvents: totalEvents ?? 0, activeSessions: activeSessions ?? 0, totalCheckIns: 0, duplicates: 0 })
-          setDataLoading(false)
-          return
-        }
-        checkInsQuery = checkInsQuery.in('event_id', myEventIds)
-      }
-      const { count: totalCheckIns } = await checkInsQuery
-
-      // ── Duplicates ─────────────────────────────────────────────
-      let dupQuery = supabase
-        .from('attendance_records')
-        .select('id', { count: 'exact', head: true })
-        .eq('status', 'duplicate')
-      if (!isSuperAdmin) {
-        const { data: myEvents } = await supabase.from('events').select('id').eq('created_by', profile.id)
-        const ids = myEvents?.map(e => e.id) ?? []
-        if (ids.length > 0) dupQuery = dupQuery.in('event_id', ids)
-      }
-      const { count: duplicates } = await dupQuery
-
-      setStats({
-        totalEvents: totalEvents ?? 0,
-        activeSessions: activeSessions ?? 0,
-        totalCheckIns: totalCheckIns ?? 0,
-        duplicates: duplicates ?? 0,
-      })
-      setDataLoading(false)
+    const run = async () => {
+      await Promise.all([fetchStats(), fetchLive()])
     }
+    run()
 
-    fetchStats()
-
-    // Real-time: re-fetch stats when attendance changes
-    const channel = supabase
-      .channel('dashboard-realtime')
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'attendance_records' },
-        () => { fetchStats() })
+    const ch = supabase.channel('dash-rt')
+      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'attendance_records' }, payload => {
+        setLive(prev => [payload.new as LiveRecord, ...prev].slice(0, 8))
+        fetchStats()
+      })
       .subscribe()
 
-    return () => { supabase.removeChannel(channel) }
+    return () => { supabase.removeChannel(ch) }
   }, [profile])
 
-  if (authLoading) {
-    return (
-      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
-        <div className="text-center text-gray-400">
-          <div className="animate-spin text-3xl mb-3">⏳</div>
-          <p className="text-sm">Loading…</p>
-        </div>
-      </div>
-    )
-  }
-
   const statCards = [
-    {
-      label: 'Total Events',
-      value: dataLoading ? '…' : stats.totalEvents,
-      icon: '📅',
-      accent: 'bg-blue-50 border-blue-100 text-blue-600',
-    },
-    {
-      label: 'Active Sessions',
-      value: dataLoading ? '…' : stats.activeSessions,
-      icon: '🟢',
-      accent: 'bg-green-50 border-green-100 text-green-600',
-    },
-    {
-      label: 'Total Check‑ins',
-      value: dataLoading ? '…' : stats.totalCheckIns,
-      icon: '✅',
-      accent: 'bg-orange-50 border-orange-100 text-orange-600',
-    },
-    {
-      label: 'Duplicates',
-      value: dataLoading ? '…' : stats.duplicates,
-      icon: '⚠️',
-      accent: 'bg-red-50 border-red-100 text-red-600',
-    },
+    { label: 'Total Events',    value: stats.totalEvents,    icon: '📅', color: 'bg-blue-50 text-blue-600 border-blue-100' },
+    { label: 'Active Sessions', value: stats.activeSessions, icon: '🟢', color: 'bg-green-50 text-green-600 border-green-100' },
+    { label: 'Total Check-ins', value: stats.totalCheckIns,  icon: '✅', color: 'bg-indigo-50 text-indigo-600 border-indigo-100' },
+    { label: 'Duplicates',      value: stats.duplicates,     icon: '⚠️', color: 'bg-red-50 text-red-600 border-red-100' },
   ]
 
   return (
-    <div className="min-h-screen bg-gray-50">
-      {/* Top bar */}
-      <header className="bg-white shadow-sm border-b border-gray-200 px-6 py-4">
-        <div className="max-w-7xl mx-auto flex items-center justify-between">
-          <div>
-            <h1 className="text-xl font-bold text-gray-800">Dashboard</h1>
-            <p className="text-sm text-gray-500 mt-0.5">
-              Welcome back,{' '}
-              <span className="font-medium text-gray-700">
-                {profile?.full_name || profile?.email || 'Admin'}
-              </span>
-            </p>
-          </div>
-          <button
-            onClick={signOut}
-            className="text-sm text-red-600 hover:text-red-700 hover:underline transition"
-          >
-            Sign Out
-          </button>
-        </div>
-      </header>
+    <div className="space-y-6">
+      <div>
+        <h1 className="text-2xl font-bold text-gray-900">
+          Welcome back, {profile?.full_name?.split(' ')[0] || 'Admin'} 👋
+        </h1>
+        <p className="text-sm text-gray-500 mt-1">Here&apos;s what&apos;s happening with your events today.</p>
+      </div>
 
-      <main className="max-w-7xl mx-auto px-6 py-8">
-        {/* Stats */}
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-5 mb-10">
-          {statCards.map((s) => (
-            <div
-              key={s.label}
-              className="bg-white rounded-2xl shadow-sm border border-gray-100 p-5
-                hover:shadow-md transition-shadow"
-            >
-              <div className="flex items-center justify-between">
-                <div>
-                  <p className="text-xs uppercase tracking-wide text-gray-500 font-medium mb-1.5">
-                    {s.label}
-                  </p>
-                  <p className="text-3xl font-bold text-gray-800">{s.value}</p>
-                </div>
-                <div
-                  className={`w-12 h-12 rounded-xl flex items-center justify-center text-2xl border ${s.accent}`}
-                >
-                  {s.icon}
-                </div>
+      {/* Stat cards */}
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+        {statCards.map(s => (
+          <div key={s.label} className="bg-white rounded-2xl border border-gray-100 shadow-sm p-5">
+            <div className="flex items-start justify-between">
+              <div>
+                <p className="text-xs text-gray-500 font-medium uppercase tracking-wide mb-1">{s.label}</p>
+                <p className="text-3xl font-bold text-gray-900">{statsLoading ? '…' : s.value}</p>
+              </div>
+              <div className={`w-10 h-10 rounded-xl flex items-center justify-center text-lg border ${s.color}`}>
+                {s.icon}
               </div>
             </div>
-          ))}
+          </div>
+        ))}
+      </div>
+
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+        {/* Live feed */}
+        <div className="lg:col-span-2 bg-white rounded-2xl border border-gray-100 shadow-sm p-6">
+          <div className="flex items-center justify-between mb-4">
+            <h2 className="text-base font-semibold text-gray-900">Live Check-ins</h2>
+            <span className="flex items-center gap-1.5 text-xs text-green-600 font-medium">
+              <span className="w-1.5 h-1.5 rounded-full bg-green-500 animate-pulse" />Live
+            </span>
+          </div>
+          {live.length === 0 ? (
+            <div className="text-center py-10 text-gray-400">
+              <p className="text-3xl mb-2">📭</p>
+              <p className="text-sm">No check-ins yet. Start a session to begin.</p>
+            </div>
+          ) : (
+            <div className="space-y-2 max-h-72 overflow-y-auto">
+              {live.map(r => (
+                <div key={r.id} className="flex items-center justify-between py-2.5 px-3 rounded-xl hover:bg-gray-50 transition">
+                  <div className="flex items-center gap-3 min-w-0">
+                    <div className="w-8 h-8 rounded-full bg-indigo-100 text-indigo-700 flex items-center justify-center text-xs font-bold shrink-0">
+                      {r.full_name[0]?.toUpperCase()}
+                    </div>
+                    <div className="min-w-0">
+                      <p className="text-sm font-medium text-gray-900 truncate">{r.full_name}</p>
+                      <p className="text-xs text-gray-400">{r.phone}</p>
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-2 shrink-0">
+                    <span className={`text-xs font-medium px-2 py-0.5 rounded-full ${
+                      r.status === 'verified'  ? 'bg-green-100 text-green-700' :
+                      r.status === 'duplicate' ? 'bg-red-100 text-red-700' :
+                      'bg-gray-100 text-gray-600'
+                    }`}>{r.status}</span>
+                    <span className="text-xs text-gray-400 hidden sm:block">
+                      {new Date(r.submitted_at).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' })}
+                    </span>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
         </div>
 
         {/* Quick actions */}
-        <h2 className="text-sm font-semibold text-gray-500 uppercase tracking-wide mb-4">
-          Quick Actions
-        </h2>
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-5">
-          <Link
-            href="/admin/events/new"
-            className="bg-white rounded-2xl shadow-sm border border-gray-100 p-6
-              hover:shadow-md transition-shadow flex items-center gap-5 group"
-          >
-            <div className="w-13 h-13 bg-indigo-50 rounded-xl flex items-center justify-center text-2xl flex-shrink-0">
-              📅
-            </div>
-            <div>
-              <h3 className="font-semibold text-gray-800 group-hover:text-indigo-700 transition">
-                Create New Event
-              </h3>
-              <p className="text-sm text-gray-500 mt-1">
-                Set up an event and start taking attendance
-              </p>
-            </div>
-          </Link>
-
-          <Link
-            href="/admin/events"
-            className="bg-white rounded-2xl shadow-sm border border-gray-100 p-6
-              hover:shadow-md transition-shadow flex items-center gap-5 group"
-          >
-            <div className="w-13 h-13 bg-amber-50 rounded-xl flex items-center justify-center text-2xl flex-shrink-0">
-              📁
-            </div>
-            <div>
-              <h3 className="font-semibold text-gray-800 group-hover:text-indigo-700 transition">
-                Manage Events
-              </h3>
-              <p className="text-sm text-gray-500 mt-1">
-                View and edit your events and sessions
-              </p>
-            </div>
-          </Link>
+        <div className="space-y-4">
+          <h2 className="text-base font-semibold text-gray-900">Quick Actions</h2>
+          {[
+            { href: '/admin/events/new', icon: '➕', label: 'Create Event',    desc: 'Set up a new event',           color: 'bg-indigo-50 text-indigo-600' },
+            { href: '/admin/events',     icon: '📅', label: 'My Events',       desc: 'View and manage events',       color: 'bg-blue-50 text-blue-600' },
+            { href: '/admin/sessions',   icon: '🔗', label: 'Sessions',        desc: 'Start or manage sessions',     color: 'bg-green-50 text-green-600' },
+            { href: '/admin/analytics',  icon: '📈', label: 'Analytics',       desc: 'View detailed insights',       color: 'bg-purple-50 text-purple-600' },
+          ].map(a => (
+            <Link key={a.href} href={a.href}
+              className="flex items-center gap-4 bg-white rounded-2xl border border-gray-100 shadow-sm p-4 hover:border-indigo-200 hover:shadow-md transition group">
+              <div className={`w-10 h-10 rounded-xl flex items-center justify-center text-lg shrink-0 ${a.color}`}>{a.icon}</div>
+              <div>
+                <p className="text-sm font-semibold text-gray-800 group-hover:text-indigo-700 transition">{a.label}</p>
+                <p className="text-xs text-gray-400">{a.desc}</p>
+              </div>
+            </Link>
+          ))}
         </div>
-      </main>
+      </div>
     </div>
   )
 }

@@ -265,7 +265,7 @@ export default function AnalyticsPage() {
                 <div key={m.label}>
                   <div className="flex justify-between text-sm mb-1.5">
                     <span className="text-gray-600">{m.label}</span>
-                    <span className="font-semibold text-gray-800">{m.pct}%</span>
+                    <span className="font-semibold text-gray-800">{m.count} <span className="text-gray-400 font-normal">({m.pct}%)</span></span>
                   </div>
                   <Bar pct={m.pct} colorClass={METHOD_COLORS[i % METHOD_COLORS.length]} />
                 </div>
@@ -274,13 +274,32 @@ export default function AnalyticsPage() {
           )}
         </div>
 
-        {/* Live feed */}
-        <LiveFeed profile={profile} />
+        {/* Duplicate summary */}
+        <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-6">
+          <h3 className="text-base font-semibold text-gray-800 mb-5">Submission Quality</h3>
+          <div className="space-y-4">
+            {[
+              { label: 'Verified',   value: overview?.totalAttendance ? overview.totalAttendance - Math.round((overview.duplicateRate / 100) * overview.totalAttendance) : 0, color: 'bg-green-500', textColor: 'text-green-700 bg-green-50' },
+              { label: 'Duplicates', value: overview?.totalAttendance ? Math.round((overview.duplicateRate / 100) * overview.totalAttendance) : 0, color: 'bg-red-400', textColor: 'text-red-700 bg-red-50' },
+            ].map(item => (
+              <div key={item.label} className="flex items-center justify-between p-4 rounded-xl border border-gray-100">
+                <div className="flex items-center gap-3">
+                  <div className={`w-3 h-3 rounded-full ${item.color}`} />
+                  <span className="text-sm font-medium text-gray-700">{item.label}</span>
+                </div>
+                <span className={`text-sm font-bold px-3 py-1 rounded-full ${item.textColor}`}>{item.value}</span>
+              </div>
+            ))}
+            <div className="mt-4 bg-gray-50 rounded-xl p-4 text-xs text-gray-500">
+              Duplicate submissions are blocked in real-time by phone number per session.
+            </div>
+          </div>
+        </div>
       </div>
     </div>
   )
 }
-
+ 
 // ── Live feed component ───────────────────────────────────────────────────────
 interface LiveRecord {
   id: string

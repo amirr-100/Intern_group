@@ -88,18 +88,20 @@ export default function LiveSessionPage() {
     return () => { supabase.removeChannel(channel) }
   }, [sessionId, fetchSummary])
 
-  const startSession = async () => {
-    setStarting(true)
-    // Mark session active
-    await supabase
-      .from('sessions')
-      .update({ status: 'active', started_at: new Date().toISOString() })
-      .eq('id', sessionId)
+  const QR_ROTATION_SECONDS = 10
 
-    // Generate a single fixed QR token — only invalidated when session ends
+  const generateNewToken = useCallback(async () => {
+    // Deactivate all existing tokens for this session
+    await supabase
+      .from('qr_tokens')
+      .update({ is_active: false })
+      .eq('session_id', sessionId)
+      .eq('is_active', true)
+
+    // Insert new token valid for 1 minute (session status is real gate)
     const token = crypto.randomUUID()
     const expiry = new Date()
-    expiry.setHours(expiry.getHours() + 24)
+    expiry.setSeconds(expiry.getSeconds() + QR_ROTATION_SECONDS)
     await supabase.from('qr_tokens').insert({
       session_id: sessionId,
       token,
@@ -108,6 +110,15 @@ export default function LiveSessionPage() {
     })
 
     setQrUrl(`${window.location.origin}/attend?token=${token}`)
+  }, [sessionId])
+
+  const startSession = async () => {
+    setStarting(true)
+    await supabase
+      .from('sessions')
+      .update({ status: 'active', started_at: new Date().toISOString() })
+      .eq('id', sessionId)
+    await generateNewToken()
     await fetchSession()
     setStarting(false)
   }
