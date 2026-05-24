@@ -94,7 +94,7 @@ export default function DashboardPage() {
         totalEvents: totalEvents ?? 0,
         activeSessions: activeSessions ?? 0,
         totalCheckIns: totalCheckIns ?? 0,
-        duplicates,
+        duplicates: duplicates ?? 0,
       })
       setDataLoading(false)
     }
