@@ -1,11 +1,11 @@
 ﻿'use client'
-import { useEffect, useState } from 'react'
+import { useEffect, useState, Suspense } from 'react'
 import { supabase } from '@/lib/supabase'
 import { useRouter, useSearchParams } from 'next/navigation'
 import Link from 'next/link'
 import type { Profile } from '@/types/database'
 
-export default function ProfilesPage() {
+function ProfilesPageInner() {
   const router = useRouter()
   const searchParams = useSearchParams()
   const [profiles, setProfiles] = useState<Profile[]>([])
@@ -290,5 +290,12 @@ export default function ProfilesPage() {
         </div>
       )}
     </div>
+  )
+}
+export default function ProfilesPage() {
+  return (
+    <Suspense fallback={<div className="flex items-center justify-center py-20 text-gray-400">Loading…</div>}>
+      <ProfilesPageInner />
+    </Suspense>
   )
 }

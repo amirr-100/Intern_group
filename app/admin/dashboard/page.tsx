@@ -1,6 +1,6 @@
 ﻿﻿// app/admin/dashboard/page.tsx
 'use client'
-import { useEffect, useState } from 'react'
+import { useEffect, useState, Suspense } from 'react'
 import { supabase } from '@/lib/supabase'
 import { useAuth } from '@/lib/AuthContext'
 import { useRouter } from 'next/navigation'
