@@ -4,190 +4,164 @@ import { supabase } from '@/lib/supabase'
 import { useAuth } from '@/lib/AuthContext'
 import { useRouter } from 'next/navigation'
 
-// ── Types ─────────────────────────────────────────────────────────────────────
 interface OverviewStats {
   totalAttendance: number
   uniqueAttendees: number
   avgPerEvent: number
   duplicateRate: number
 }
-
 interface DayCount { day: string; count: number }
 interface EventCount { name: string; count: number }
 interface MethodCount { label: string; count: number; pct: number }
 
-// ── Small bar component ────────────────────────────────────────────────────────
 function Bar({ pct, colorClass }: { pct: number; colorClass: string }) {
   return (
     <div className="w-full bg-gray-100 rounded-full h-2">
-      <div
-        className={`h-2 rounded-full ${colorClass} transition-all duration-500`}
-        style={{ width: `${pct}%` }}
-      />
+      <div className={`h-2 rounded-full ${colorClass} transition-all duration-500`} style={{ width: `${pct}%` }} />
     </div>
   )
 }
 
-// ── Method label map ─────────────────────────────────────────────────────────
 const METHOD_LABELS: Record<string, string> = {
-  qr:     'QR Scan',
-  manual: 'Manual Entry',
-  paper:  'Paper Upload',
+  qr_scan: 'QR Scan', manual: 'Manual Entry', paper_upload: 'Paper Upload',
 }
-
 const METHOD_COLORS = ['bg-indigo-500', 'bg-emerald-500', 'bg-amber-500']
 const EVENT_COLORS  = ['bg-indigo-500', 'bg-emerald-500', 'bg-amber-500', 'bg-rose-500', 'bg-purple-500']
 
-// ── Page ──────────────────────────────────────────────────────────────────────
+const DAY_SHORT = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat']
+
+function buildWeekFromMap(dayMap: Record<string, number>): DayCount[] {
+  const today = new Date().getDay()
+  return Array.from({ length: 7 }, (_, i) => {
+    const label = DAY_SHORT[(today - 6 + i + 7) % 7]
+    return { day: label, count: dayMap[label] ?? 0 }
+  })
+}
+
 export default function AnalyticsPage() {
   const { profile, loading: authLoading } = useAuth()
   const router = useRouter()
 
-  const [overview, setOverview] = useState<OverviewStats | null>(null)
-  const [weekly, setWeekly] = useState<DayCount[]>([])
-  const [byEvent, setByEvent] = useState<EventCount[]>([])
-  const [byMethod, setByMethod] = useState<MethodCount[]>([])
-  const [totalFlagged] = useState(0)   // extend later if you add a duplicate flag
-  const [loading, setLoading] = useState(true)
+  const [overview, setOverview]   = useState<OverviewStats | null>(null)
+  const [weekly, setWeekly]       = useState<DayCount[]>(buildWeekFromMap({}))
+  const [byEvent, setByEvent]     = useState<EventCount[]>([])
+  const [byMethod, setByMethod]   = useState<MethodCount[]>([])
+  const [loading, setLoading]     = useState(true)
+  const [lastUpdated, setLastUpdated] = useState<Date | null>(null)
 
-  // ── Auth redirect ──────────────────────────────────────────────────────────
   useEffect(() => {
     if (!authLoading && !profile) router.push('/login')
   }, [authLoading, profile, router])
 
-  // ── Fetch analytics (memoised with useCallback) ────────────────────────────
   const fetchAnalytics = useCallback(async () => {
-    setLoading(true)
-    const isSuperAdmin = profile!.role === 'super_admin'
+    if (!profile) return
+    const isSuperAdmin = profile.role === 'super_admin'
 
-    // 1. Determine which event_ids to scope to
+    // Get scoped event IDs for non-super-admin
     let scopedEventIds: string[] | null = null
     if (!isSuperAdmin) {
       const { data: myEvents } = await supabase
-        .from('events')
-        .select('id')
-        .eq('created_by', profile!.id)
-        .eq('is_archived', false)
-      scopedEventIds = myEvents?.map((e) => e.id) ?? []
-    }
-
-    // Helper: build a base attendees query scoped to this admin
-    function attendeesBase() {
-      let q = supabase.from('attendees').select('*')
-      if (scopedEventIds !== null) {
-        if (scopedEventIds.length === 0) return null   // no events → nothing
-        q = q.in('event_id', scopedEventIds)
+        .from('events').select('id').eq('created_by', profile.id)
+      scopedEventIds = myEvents?.map(e => e.id) ?? []
+      if (scopedEventIds.length === 0) {
+        setOverview({ totalAttendance: 0, uniqueAttendees: 0, avgPerEvent: 0, duplicateRate: 0 })
+        setWeekly(buildWeekFromMap({}))
+        setByEvent([])
+        setByMethod([])
+        setLoading(false)
+        return
       }
-      return q
     }
 
-    // 2. Fetch all attendees (for phone dedup & method breakdown)
-    const base = attendeesBase()
-    if (!base) {
-      // Admin has no events yet
-      setOverview({ totalAttendance: 0, uniqueAttendees: 0, avgPerEvent: 0, duplicateRate: 0 })
-      setWeekly(buildEmptyWeek())
-      setByEvent([])
-      setByMethod([])
-      setLoading(false)
-      return
-    }
+    // Fetch all attendance records in scope
+    let recQuery = supabase
+      .from('attendance_records')
+      .select('id, full_name, phone, method, status, submitted_at, session_id, event_id')
 
-    const { data: allAttendees } = await base
+    if (scopedEventIds) recQuery = recQuery.in('event_id', scopedEventIds)
 
-    const totalAttendance = allAttendees?.length ?? 0
-    const uniquePhones = new Set(allAttendees?.map((r) => r.phone) ?? []).size
+    const { data: records } = await recQuery
+    const all = records ?? []
 
-    // 3. Event count for avg
-    let evCount = 0
-    {
-      let q = supabase.from('events').select('id', { count: 'exact', head: true })
-      if (scopedEventIds !== null && scopedEventIds.length > 0) {
-        q = q.in('id', scopedEventIds)
-      }
-      const { count } = await q
-      evCount = count ?? 0
-    }
+    // Overview
+    const totalAttendance = all.length
+    const uniquePhones = new Set(all.map(r => r.phone)).size
+    const duplicates = all.filter(r => r.status === 'duplicate').length
+    const duplicateRate = totalAttendance > 0 ? Math.round((duplicates / totalAttendance) * 100) : 0
 
-    const avgPerEvent = evCount > 0 ? Math.round(totalAttendance / evCount) : 0
-    const duplicateRate = 0  // extend when you add duplicate tracking
+    // Event count for avg
+    let evCountQuery = supabase.from('events').select('id', { count: 'exact', head: true })
+    if (scopedEventIds) evCountQuery = evCountQuery.in('id', scopedEventIds)
+    const { count: evCount } = await evCountQuery
+    const avgPerEvent = (evCount ?? 0) > 0 ? Math.round(totalAttendance / (evCount ?? 1)) : 0
 
     setOverview({ totalAttendance, uniqueAttendees: uniquePhones, avgPerEvent, duplicateRate })
 
-    // 4. Last 7 days
+    // Weekly
     const sevenDaysAgo = new Date()
     sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 6)
     sevenDaysAgo.setHours(0, 0, 0, 0)
-
-    const recent = allAttendees?.filter(
-      (r) => new Date(r.submitted_at) >= sevenDaysAgo
-    ) ?? []
-
     const dayMap: Record<string, number> = {}
-    recent.forEach((r) => {
+    all.filter(r => new Date(r.submitted_at) >= sevenDaysAgo).forEach(r => {
       const label = new Date(r.submitted_at).toLocaleDateString('en-US', { weekday: 'short' })
       dayMap[label] = (dayMap[label] ?? 0) + 1
     })
     setWeekly(buildWeekFromMap(dayMap))
 
-    // 5. Attendance by event (fetch event names for scoped IDs)
-    const eventsForBreakdown =
-      scopedEventIds !== null
-        ? await supabase.from('events').select('id, name').in('id', scopedEventIds.length ? scopedEventIds : ['00000000-0000-0000-0000-000000000000'])
-        : await supabase.from('events').select('id, name')
-
+    // By event
+    const eventsRes = scopedEventIds
+      ? await supabase.from('events').select('id, name').in('id', scopedEventIds)
+      : await supabase.from('events').select('id, name')
     const eventNameMap: Record<string, string> = {}
-    eventsForBreakdown.data?.forEach((e) => { eventNameMap[e.id] = e.name })
+    eventsRes.data?.forEach(e => { eventNameMap[e.id] = e.name })
 
     const eventCountMap: Record<string, number> = {}
-    allAttendees?.forEach((r) => {
+    all.forEach(r => {
       const name = eventNameMap[r.event_id] ?? 'Unknown'
       eventCountMap[name] = (eventCountMap[name] ?? 0) + 1
     })
-    const byEventArr = Object.entries(eventCountMap)
-      .map(([name, count]) => ({ name, count }))
-      .sort((a, b) => b.count - a.count)
-    setByEvent(byEventArr)
+    setByEvent(Object.entries(eventCountMap).map(([name, count]) => ({ name, count })).sort((a, b) => b.count - a.count))
 
-    // 6. Method breakdown
+    // By method
     const methodMap: Record<string, number> = {}
-    allAttendees?.forEach((r) => {
-      const m = r.check_in_method ?? 'unknown'
-      methodMap[m] = (methodMap[m] ?? 0) + 1
-    })
-    const byMethodArr: MethodCount[] = Object.entries(methodMap)
-      .map(([method, count]) => ({
-        label: METHOD_LABELS[method] ?? method,
-        count,
-        pct: totalAttendance > 0 ? Math.round((count / totalAttendance) * 100) : 0,
-      }))
-      .sort((a, b) => b.count - a.count)
-    setByMethod(byMethodArr)
+    all.forEach(r => { methodMap[r.method] = (methodMap[r.method] ?? 0) + 1 })
+    setByMethod(
+      Object.entries(methodMap)
+        .map(([method, count]) => ({
+          label: METHOD_LABELS[method] ?? method,
+          count,
+          pct: totalAttendance > 0 ? Math.round((count / totalAttendance) * 100) : 0,
+        }))
+        .sort((a, b) => b.count - a.count)
+    )
 
+    setLastUpdated(new Date())
     setLoading(false)
-  }, [profile])   // depends only on profile
+  }, [profile])
 
-  // ── Trigger fetch once profile is ready (cancellation-safe) ────────────────
+  // Initial fetch
   useEffect(() => {
     if (!profile) return
-
-    let cancelled = false
-
-    const load = async () => {
-      if (!cancelled) setLoading(true)
-      await fetchAnalytics()
-      if (cancelled) setLoading(false)
-    }
-
-     
-    load()
-
-    return () => {
-      cancelled = true
-    }
+    const run = async () => { await fetchAnalytics() }
+    run()
   }, [profile, fetchAnalytics])
 
-  // ── Loading state ──────────────────────────────────────────────────────────
+  // Real-time subscription — re-fetch whenever a new attendance record is inserted
+  useEffect(() => {
+    if (!profile) return
+    const channel = supabase
+      .channel('analytics-realtime')
+      .on('postgres_changes', {
+        event: '*',
+        schema: 'public',
+        table: 'attendance_records',
+      }, () => {
+        fetchAnalytics()
+      })
+      .subscribe()
+    return () => { supabase.removeChannel(channel) }
+  }, [profile, fetchAnalytics])
+
   if (authLoading || loading) {
     return (
       <div className="flex items-center justify-center py-24 text-gray-400">
@@ -199,72 +173,66 @@ export default function AnalyticsPage() {
     )
   }
 
-  const maxWeekly = Math.max(...weekly.map((d) => d.count), 1)
-  const maxEvent  = Math.max(...byEvent.map((e) => e.count), 1)
+  const maxWeekly = Math.max(...weekly.map(d => d.count), 1)
+  const maxEvent  = Math.max(...byEvent.map(e => e.count), 1)
 
   return (
     <div>
-      {/* Header */}
-      <div className="mb-8">
-        <h1 className="text-2xl font-bold text-gray-800">Analytics</h1>
-        <p className="text-sm text-gray-500 mt-1">Real‑time attendance insights</p>
+      <div className="mb-8 flex items-center justify-between">
+        <div>
+          <h1 className="text-2xl font-bold text-gray-800">Analytics</h1>
+          <p className="text-sm text-gray-500 mt-1">Real-time attendance insights</p>
+        </div>
+        <div className="flex items-center gap-2 text-xs text-gray-400">
+          <span className="w-2 h-2 rounded-full bg-green-500 animate-pulse inline-block" />
+          Live
+          {lastUpdated && <span className="ml-1">· updated {lastUpdated.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit', second: '2-digit' })}</span>}
+        </div>
       </div>
 
       {/* Overview stats */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-8">
         {[
-          { label: 'Total Attendance',  value: overview?.totalAttendance ?? 0, icon: '✅' },
-          { label: 'Unique Attendees',  value: overview?.uniqueAttendees  ?? 0, icon: '👤' },
-          { label: 'Avg per Event',     value: overview?.avgPerEvent      ?? 0, icon: '📊' },
+          { label: 'Total Attendance',  value: overview?.totalAttendance ?? 0,  icon: '✅' },
+          { label: 'Unique Attendees',  value: overview?.uniqueAttendees  ?? 0,  icon: '👤' },
+          { label: 'Avg per Event',     value: overview?.avgPerEvent      ?? 0,  icon: '📊' },
           { label: 'Duplicate Rate',    value: `${overview?.duplicateRate ?? 0}%`, icon: '⚠️' },
-        ].map((s) => (
-          <div
-            key={s.label}
-            className="bg-white rounded-2xl shadow-sm border border-gray-100 p-5"
-          >
+        ].map(s => (
+          <div key={s.label} className="bg-white rounded-2xl shadow-sm border border-gray-100 p-5">
             <div className="flex items-center justify-between">
               <div>
-                <p className="text-xs uppercase tracking-wide text-gray-500 font-medium mb-1.5">
-                  {s.label}
-                </p>
+                <p className="text-xs uppercase tracking-wide text-gray-500 font-medium mb-1.5">{s.label}</p>
                 <p className="text-2xl font-bold text-gray-800">{s.value}</p>
               </div>
-              <div className="w-11 h-11 rounded-xl bg-indigo-50 flex items-center justify-center text-xl">
-                {s.icon}
-              </div>
+              <div className="w-11 h-11 rounded-xl bg-indigo-50 flex items-center justify-center text-xl">{s.icon}</div>
             </div>
           </div>
         ))}
       </div>
 
-      {/* Charts row */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
         {/* Weekly bar chart */}
         <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-6">
           <h3 className="text-base font-semibold text-gray-800 mb-5">Last 7 Days</h3>
           <div className="flex items-end justify-between h-36 gap-2">
-            {weekly.map((d) => {
+            {weekly.map(d => {
               const heightPct = Math.round((d.count / maxWeekly) * 100)
               return (
                 <div key={d.day} className="flex flex-col items-center flex-1 gap-1">
-                  {d.count > 0 && (
-                    <span className="text-xs font-semibold text-indigo-600">{d.count}</span>
-                  )}
+                  {d.count > 0 && <span className="text-xs font-semibold text-indigo-600">{d.count}</span>}
                   <div
                     className="w-full rounded-t-lg bg-indigo-500 opacity-80 transition-all duration-500"
                     style={{ height: `${Math.max(4, heightPct)}%` }}
                   />
                   <span className="text-xs text-gray-500">{d.day}</span>
-                  {d.count === 0 && (
-                    <span className="text-xs text-gray-300">0</span>
-                  )}
+                  {d.count === 0 && <span className="text-xs text-gray-300">0</span>}
                 </div>
               )
             })}
           </div>
         </div>
 
-        {/* Attendance by event */}
+        {/* By event */}
         <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-6">
           <h3 className="text-base font-semibold text-gray-800 mb-5">Attendance by Event</h3>
           {byEvent.length === 0 ? (
@@ -277,10 +245,7 @@ export default function AnalyticsPage() {
                     <span className="text-gray-600 truncate max-w-[70%]">{ev.name}</span>
                     <span className="font-semibold text-gray-800">{ev.count}</span>
                   </div>
-                  <Bar
-                    pct={Math.round((ev.count / maxEvent) * 100)}
-                    colorClass={EVENT_COLORS[i % EVENT_COLORS.length]}
-                  />
+                  <Bar pct={Math.round((ev.count / maxEvent) * 100)} colorClass={EVENT_COLORS[i % EVENT_COLORS.length]} />
                 </div>
               ))}
             </div>
@@ -288,11 +253,10 @@ export default function AnalyticsPage() {
         </div>
       </div>
 
-      {/* Bottom row */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        {/* Check-in method */}
+        {/* Method */}
         <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-6">
-          <h3 className="text-base font-semibold text-gray-800 mb-5">Check‑in Method</h3>
+          <h3 className="text-base font-semibold text-gray-800 mb-5">Check-in Method</h3>
           {byMethod.length === 0 ? (
             <p className="text-sm text-gray-400 text-center py-8">No data yet</p>
           ) : (
@@ -310,36 +274,94 @@ export default function AnalyticsPage() {
           )}
         </div>
 
-        {/* Duplicate detection */}
-        <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-6">
-          <h3 className="text-base font-semibold text-gray-800 mb-5">Duplicate Detection</h3>
-          <div className="text-center py-6 bg-red-50 rounded-xl mb-4">
-            <p className="text-4xl font-bold text-red-600">{totalFlagged}</p>
-            <p className="text-sm text-red-500 mt-1">Total flagged duplicates</p>
-          </div>
-          <p className="text-sm text-gray-500 leading-relaxed">
-            The system blocks duplicate submissions per session by phone number.
-            Add an <code className="bg-gray-100 px-1 rounded text-xs">is_duplicate</code> column
-            to <code className="bg-gray-100 px-1 rounded text-xs">attendees</code> to track
-            flagged attempts.
-          </p>
-        </div>
+        {/* Live feed */}
+        <LiveFeed profile={profile} />
       </div>
     </div>
   )
 }
 
-// ── Helpers ───────────────────────────────────────────────────────────────────
-function buildEmptyWeek(): DayCount[] {
-  return buildWeekFromMap({})
+// ── Live feed component ───────────────────────────────────────────────────────
+interface LiveRecord {
+  id: string
+  full_name: string
+  phone: string
+  method: string
+  status: string
+  submitted_at: string
 }
 
-function buildWeekFromMap(dayMap: Record<string, number>): DayCount[] {
-  const DAY_SHORT = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat']
-  const today = new Date().getDay()  // 0 = Sun
-  return Array.from({ length: 7 }, (_, i) => {
-    const dayIdx = (today - 6 + i + 7) % 7
-    const label = DAY_SHORT[dayIdx]
-    return { day: label, count: dayMap[label] ?? 0 }
-  })
+function LiveFeed({ profile }: { profile: { id: string; role: string } | null }) {
+  const [records, setRecords] = useState<LiveRecord[]>([])
+
+  useEffect(() => {
+    if (!profile) return
+
+    // Load last 10 recent records
+    const load = async () => {
+      let q = supabase
+        .from('attendance_records')
+        .select('id, full_name, phone, method, status, submitted_at')
+        .order('submitted_at', { ascending: false })
+        .limit(10)
+
+      if (profile.role !== 'super_admin') {
+        const { data: myEvents } = await supabase.from('events').select('id').eq('created_by', profile.id)
+        const ids = myEvents?.map(e => e.id) ?? []
+        if (ids.length > 0) q = q.in('event_id', ids)
+        else { setRecords([]); return }
+      }
+
+      const { data } = await q
+      setRecords((data as LiveRecord[]) ?? [])
+    }
+    load()
+
+    // Subscribe for new inserts
+    const channel = supabase
+      .channel('live-feed')
+      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'attendance_records' },
+        (payload) => {
+          setRecords(prev => [payload.new as LiveRecord, ...prev].slice(0, 10))
+        })
+      .subscribe()
+
+    return () => { supabase.removeChannel(channel) }
+  }, [profile])
+
+  return (
+    <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-6">
+      <div className="flex items-center justify-between mb-5">
+        <h3 className="text-base font-semibold text-gray-800">Live Check-ins</h3>
+        <span className="flex items-center gap-1.5 text-xs text-green-600 font-medium">
+          <span className="w-1.5 h-1.5 rounded-full bg-green-500 animate-pulse" />
+          Live
+        </span>
+      </div>
+      {records.length === 0 ? (
+        <p className="text-sm text-gray-400 text-center py-8">Waiting for check-ins…</p>
+      ) : (
+        <div className="space-y-2 max-h-64 overflow-y-auto">
+          {records.map(r => (
+            <div key={r.id} className="flex items-center justify-between py-2 border-b border-gray-50 last:border-0">
+              <div>
+                <p className="text-sm font-medium text-gray-800">{r.full_name}</p>
+                <p className="text-xs text-gray-400">{r.phone}</p>
+              </div>
+              <div className="text-right">
+                <span className={`text-xs font-medium px-2 py-0.5 rounded-full ${
+                  r.status === 'verified' ? 'bg-green-100 text-green-700' :
+                  r.status === 'duplicate' ? 'bg-red-100 text-red-700' :
+                  'bg-gray-100 text-gray-600'
+                }`}>{r.status}</span>
+                <p className="text-xs text-gray-400 mt-0.5">
+                  {new Date(r.submitted_at).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' })}
+                </p>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  )
 }

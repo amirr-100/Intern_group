@@ -60,42 +60,35 @@ export default function DashboardPage() {
       }
       const { count: activeSessions } = await sessionsQuery
 
-      // ── Total check-ins (from attendees table) ─────────────────
-      // Admin: only attendees for their events
-      let attendeesQuery = supabase
-        .from('attendees')
+      // ── Total check-ins ────────────────────────────────────────
+      let checkInsQuery = supabase
+        .from('attendance_records')
         .select('id', { count: 'exact', head: true })
 
       if (!isSuperAdmin) {
-        // Get event IDs that belong to this admin first
         const { data: myEvents } = await supabase
-          .from('events')
-          .select('id')
-          .eq('created_by', profile.id)
-
-        const myEventIds = myEvents?.map((e) => e.id) ?? []
-        if (myEventIds.length > 0) {
-          attendeesQuery = attendeesQuery.in('event_id', myEventIds)
-        } else {
-          // No events → 0 check-ins
-          setStats({
-            totalEvents: totalEvents ?? 0,
-            activeSessions: activeSessions ?? 0,
-            totalCheckIns: 0,
-            duplicates: 0,
-          })
+          .from('events').select('id').eq('created_by', profile.id)
+        const myEventIds = myEvents?.map(e => e.id) ?? []
+        if (myEventIds.length === 0) {
+          setStats({ totalEvents: totalEvents ?? 0, activeSessions: activeSessions ?? 0, totalCheckIns: 0, duplicates: 0 })
           setDataLoading(false)
           return
         }
+        checkInsQuery = checkInsQuery.in('event_id', myEventIds)
       }
-      const { count: totalCheckIns } = await attendeesQuery
+      const { count: totalCheckIns } = await checkInsQuery
 
-      // ── Duplicate count ────────────────────────────────────────
-      // A duplicate = same phone appearing more than once in the same session.
-      // Simple proxy: count rows where the phone appears duplicated.
-      // Using a "count group" approach via RPC or just showing 0 until you add
-      // a `is_duplicate` column. For now we leave it as 0 unless you track it.
-      const duplicates = 0
+      // ── Duplicates ─────────────────────────────────────────────
+      let dupQuery = supabase
+        .from('attendance_records')
+        .select('id', { count: 'exact', head: true })
+        .eq('status', 'duplicate')
+      if (!isSuperAdmin) {
+        const { data: myEvents } = await supabase.from('events').select('id').eq('created_by', profile.id)
+        const ids = myEvents?.map(e => e.id) ?? []
+        if (ids.length > 0) dupQuery = dupQuery.in('event_id', ids)
+      }
+      const { count: duplicates } = await dupQuery
 
       setStats({
         totalEvents: totalEvents ?? 0,
@@ -107,6 +100,15 @@ export default function DashboardPage() {
     }
 
     fetchStats()
+
+    // Real-time: re-fetch stats when attendance changes
+    const channel = supabase
+      .channel('dashboard-realtime')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'attendance_records' },
+        () => { fetchStats() })
+      .subscribe()
+
+    return () => { supabase.removeChannel(channel) }
   }, [profile])
 
   if (authLoading) {

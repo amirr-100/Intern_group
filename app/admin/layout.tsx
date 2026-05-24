@@ -1,8 +1,7 @@
 ﻿'use client'
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { useAuth } from '@/lib/AuthContext'
 import { useRouter } from 'next/navigation'
-import { useEffect } from 'react'
 import Sidebar from '@/components/admin/Sidebar'
 import Topbar from '@/components/admin/Topbar'
 
@@ -12,32 +11,23 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
   const [sidebarOpen, setSidebarOpen] = useState(true)
 
   useEffect(() => {
+    // Only redirect once we're sure there's no profile
     if (!loading && !profile) {
-      router.push('/login')
+      router.replace('/login')
     }
   }, [profile, loading, router])
 
-  if (loading || !profile) {
-    return (
-      <div className="flex items-center justify-center min-h-screen text-gray-500">
-        Loading…
-      </div>
-    )
+  // Show shell immediately — don't block on auth loading
+  // Individual pages handle their own loading states
+  if (!loading && !profile) {
+    // Redirecting — show nothing to avoid flash
+    return null
   }
-
-  const toggleSidebar = () => setSidebarOpen((prev) => !prev)
 
   return (
     <div className="min-h-screen bg-gray-50">
-      {/* Sidebar – absolute/fixed overlay */}
       <Sidebar isOpen={sidebarOpen} />
-
-      {/* Main content area – margin shifts when sidebar opens */}
-      <div
-        className={`transition-all duration-300 ease-in-out ${
-          sidebarOpen ? 'lg:ml-64' : 'ml-0'
-        }`}
-      >
+      <div className={`transition-all duration-300 ease-in-out ${sidebarOpen ? 'lg:ml-64' : 'ml-0'}`}>
         <Topbar />
         <main className="p-6">{children}</main>
       </div>
