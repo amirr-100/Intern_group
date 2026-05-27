@@ -90,22 +90,31 @@ export default function SessionsPage() {
         }
       })
 
-      // Auto-generate token for any active session that has none
+      // Auto-generate tokens for any active session that has none (single batch)
+      const sessionsWithoutToken: {
+        session_id: string
+        token: string
+        expires_at: string
+        is_active: boolean
+      }[] = []
+
       for (const sess of activeSessions) {
         if (!tokenMap[sess.id]) {
           const newToken = crypto.randomUUID()
           const expiry = new Date()
           expiry.setHours(expiry.getHours() + 24)
-          const { error } = await supabase.from('qr_tokens').insert({
+          sessionsWithoutToken.push({
             session_id: sess.id,
             token: newToken,
             expires_at: expiry.toISOString(),
             is_active: true,
           })
-          if (!error) {
-            tokenMap[sess.id] = { token: newToken, session_id: sess.id }
-          }
+          tokenMap[sess.id] = { token: newToken, session_id: sess.id }
         }
+      }
+
+      if (sessionsWithoutToken.length > 0) {
+        await supabase.from('qr_tokens').insert(sessionsWithoutToken)
       }
 
       setActiveTokens(tokenMap)

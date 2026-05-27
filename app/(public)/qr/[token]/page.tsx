@@ -79,7 +79,9 @@ export default function QRScanPage() {
         .eq('token', token)
         .single()
 
-      if (!qr || !qr.is_active || new Date(qr.expires_at) < new Date()) {
+      const now = new Date()
+      const GRACE_SECONDS = 30
+      if (!qr || !qr.is_active || (new Date(qr.expires_at).getTime() + GRACE_SECONDS * 1000) < now.getTime()) {
         setStatus('expired')
         return
       }
@@ -111,7 +113,7 @@ export default function QRScanPage() {
 
       setStatus('valid')
 
-      const msLeft = new Date(qr.expires_at).getTime() - Date.now()
+      const msLeft = new Date(qr.expires_at).getTime() - Date.now() + GRACE_SECONDS * 1000
       if (msLeft > 0) {
         expiryRef.current = setTimeout(() => setStatus('expired'), msLeft)
       }

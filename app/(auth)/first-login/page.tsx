@@ -20,14 +20,12 @@ export default function FirstLoginPage() {
     designation: '',
     district: '',
   })
-  const [newPassword, setNewPassword] = useState('')
+  const [newPassword, setNewPassword]     = useState('')
   const [confirmPassword, setConfirmPassword] = useState('')
-  const [error, setError] = useState('')
-  const [success, setSuccess] = useState(false)
-  const [loading, setLoading] = useState(false)
-
-  // Auth check state: null = loading, true = authenticated, false = unauthenticated
-  const [isLoggedIn, setIsLoggedIn] = useState<boolean | null>(null)
+  const [error, setError]                 = useState('')
+  const [success, setSuccess]             = useState(false)
+  const [loading, setLoading]             = useState(false)
+  const [isLoggedIn, setIsLoggedIn]       = useState<boolean | null>(null)
 
   // ── Check authentication + profile on mount ─────────────────────────────
   useEffect(() => {
@@ -44,7 +42,7 @@ export default function FirstLoginPage() {
 
       setIsLoggedIn(true)
 
-      // If the user already completed setup → go straight to dashboard
+      // Already completed setup → go straight to dashboard
       const { data: profile } = await supabase
         .from('profiles')
         .select('is_first_login')
@@ -64,14 +62,13 @@ export default function FirstLoginPage() {
   const handleChange = (
     e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>
   ) => {
-    setForm((prev) => ({ ...prev, [e.target.name]: e.target.value }))
+    setForm(prev => ({ ...prev, [e.target.name]: e.target.value }))
   }
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
     setError('')
 
-    // Validate password if provided
     if (newPassword) {
       if (newPassword.length < 8) {
         setError('Password must be at least 8 characters.')
@@ -91,7 +88,6 @@ export default function FirstLoginPage() {
     setLoading(true)
 
     try {
-      // 1. Get current user
       const { data: { user }, error: userError } = await supabase.auth.getUser()
       if (userError || !user) {
         setError('Session expired. Please sign in again.')
@@ -99,7 +95,6 @@ export default function FirstLoginPage() {
         return
       }
 
-      // 2. Optional password update
       if (newPassword) {
         const { error: pwError } = await supabase.auth.updateUser({ password: newPassword })
         if (pwError) {
@@ -109,15 +104,14 @@ export default function FirstLoginPage() {
         }
       }
 
-      // 3. Update profile row
       const { error: profileError } = await supabase
         .from('profiles')
         .update({
-          full_name: form.full_name.trim(),
-          phone: form.phone.trim() || null,
-          institution: form.institution.trim() || null,
-          designation: form.designation.trim() || null,
-          district: form.district || null,
+          full_name:    form.full_name.trim(),
+          phone:        form.phone.trim() || null,
+          institution:  form.institution.trim() || null,
+          designation:  form.designation.trim() || null,
+          district:     form.district || null,
           is_first_login: false,
         })
         .eq('id', user.id)
@@ -133,7 +127,6 @@ export default function FirstLoginPage() {
         return
       }
 
-      // 4. Confirm and redirect
       setSuccess(true)
       setTimeout(() => router.replace('/admin/dashboard'), 1200)
     } catch (err) {
@@ -144,7 +137,7 @@ export default function FirstLoginPage() {
     }
   }
 
-  // ── Loading state (checking auth) ───────────────────────────────────────
+  // ── Checking auth ────────────────────────────────────────────────────────
   if (isLoggedIn === null) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-gray-50">
@@ -156,13 +149,13 @@ export default function FirstLoginPage() {
     )
   }
 
-  // ── Not authenticated → show friendly message + link to login ───────────
+  // ── Not authenticated ────────────────────────────────────────────────────
   if (!isLoggedIn) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-gray-50 px-4">
         <div className="bg-white rounded-2xl shadow-xl p-8 max-w-md text-center border border-gray-100">
           <div className="text-4xl mb-4">🔐</div>
-          <h2 className="text-xl font-bold text-gray-800 mb-2">You’re not signed in</h2>
+          <h2 className="text-xl font-bold text-gray-800 mb-2">You&apos;re not signed in</h2>
           <p className="text-sm text-gray-500 mb-6">
             Please log in first to complete your profile setup.
           </p>
@@ -177,9 +170,10 @@ export default function FirstLoginPage() {
     )
   }
 
-  // ── Authenticated → show the profile form ─────────────────────────────
+  // ── Authenticated — show form ─────────────────────────────────────────────
   return (
     <div className="min-h-screen flex">
+
       {/* Left – Brand Panel */}
       <div className="hidden lg:flex lg:w-1/2 relative overflow-hidden bg-gradient-to-br from-indigo-600 via-indigo-700 to-purple-800">
         <div className="absolute inset-0 opacity-10">
@@ -188,7 +182,6 @@ export default function FirstLoginPage() {
           <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[500px] h-[500px] border border-white/20 rounded-full" />
           <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[400px] h-[400px] border border-white/10 rounded-full" />
         </div>
-
         <div className="relative z-10 flex flex-col justify-center items-center text-white px-16 text-center">
           <div className="mb-8 relative">
             <div className="w-20 h-20 bg-white/20 backdrop-blur-md rounded-2xl flex items-center justify-center text-4xl shadow-2xl">
@@ -209,6 +202,7 @@ export default function FirstLoginPage() {
       {/* Right – Form Panel */}
       <div className="w-full lg:w-1/2 flex items-center justify-center px-6 py-12 bg-gray-50">
         <div className="w-full max-w-md">
+
           {/* Mobile logo */}
           <div className="lg:hidden text-center mb-8">
             <div className="inline-flex items-center justify-center w-14 h-14 bg-indigo-100 rounded-2xl text-2xl mb-3">
@@ -246,6 +240,7 @@ export default function FirstLoginPage() {
             )}
 
             <form onSubmit={handleSubmit} className="space-y-5">
+
               {/* Full Name */}
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1.5">
@@ -257,8 +252,8 @@ export default function FirstLoginPage() {
                   value={form.full_name}
                   onChange={handleChange}
                   required
-                  className="w-full border border-gray-200 rounded-xl px-4 py-3 text-gray-700 placeholder-gray-400 focus:ring-2 focus:ring-indigo-500 focus:border-transparent outline-none transition-shadow hover:shadow-sm"
                   placeholder="John Doe"
+                  className="w-full border border-gray-200 rounded-xl px-4 py-3 text-gray-700 placeholder-gray-400 focus:ring-2 focus:ring-indigo-500 focus:border-transparent outline-none transition-shadow hover:shadow-sm"
                 />
               </div>
 
@@ -270,12 +265,12 @@ export default function FirstLoginPage() {
                   name="phone"
                   value={form.phone}
                   onChange={handleChange}
-                  className="w-full border border-gray-200 rounded-xl px-4 py-3 text-gray-700 placeholder-gray-400 focus:ring-2 focus:ring-indigo-500 focus:border-transparent outline-none transition-shadow hover:shadow-sm"
                   placeholder="+232 76 000 000"
+                  className="w-full border border-gray-200 rounded-xl px-4 py-3 text-gray-700 placeholder-gray-400 focus:ring-2 focus:ring-indigo-500 focus:border-transparent outline-none transition-shadow hover:shadow-sm"
                 />
               </div>
 
-              {/* Institution + Designation side-by-side */}
+              {/* Institution + Designation */}
               <div className="grid grid-cols-2 gap-4">
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1.5">Institution</label>
@@ -284,8 +279,8 @@ export default function FirstLoginPage() {
                     name="institution"
                     value={form.institution}
                     onChange={handleChange}
-                    className="w-full border border-gray-200 rounded-xl px-4 py-3 text-gray-700 placeholder-gray-400 focus:ring-2 focus:ring-indigo-500 focus:border-transparent outline-none transition-shadow hover:shadow-sm"
                     placeholder="Organisation"
+                    className="w-full border border-gray-200 rounded-xl px-4 py-3 text-gray-700 placeholder-gray-400 focus:ring-2 focus:ring-indigo-500 focus:border-transparent outline-none transition-shadow hover:shadow-sm"
                   />
                 </div>
                 <div>
@@ -295,13 +290,13 @@ export default function FirstLoginPage() {
                     name="designation"
                     value={form.designation}
                     onChange={handleChange}
-                    className="w-full border border-gray-200 rounded-xl px-4 py-3 text-gray-700 placeholder-gray-400 focus:ring-2 focus:ring-indigo-500 focus:border-transparent outline-none transition-shadow hover:shadow-sm"
                     placeholder="Role / Title"
+                    className="w-full border border-gray-200 rounded-xl px-4 py-3 text-gray-700 placeholder-gray-400 focus:ring-2 focus:ring-indigo-500 focus:border-transparent outline-none transition-shadow hover:shadow-sm"
                   />
                 </div>
               </div>
 
-              {/* District — dropdown */}
+              {/* District */}
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1.5">District</label>
                 <select
@@ -311,7 +306,7 @@ export default function FirstLoginPage() {
                   className="w-full border border-gray-200 rounded-xl px-4 py-3 text-gray-700 focus:ring-2 focus:ring-indigo-500 focus:border-transparent outline-none transition-shadow hover:shadow-sm bg-white"
                 >
                   <option value="">Select district…</option>
-                  {DISTRICTS.map((d) => (
+                  {DISTRICTS.map(d => (
                     <option key={d} value={d}>{d}</option>
                   ))}
                 </select>
@@ -322,34 +317,30 @@ export default function FirstLoginPage() {
 
               {/* New Password */}
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1.5">
-                  New Password
-                </label>
+                <label className="block text-sm font-medium text-gray-700 mb-1.5">New Password</label>
                 <input
                   type="password"
                   value={newPassword}
-                  onChange={(e) => setNewPassword(e.target.value)}
-                  className="w-full border border-gray-200 rounded-xl px-4 py-3 text-gray-700 placeholder-gray-400 focus:ring-2 focus:ring-indigo-500 focus:border-transparent outline-none transition-shadow hover:shadow-sm"
+                  onChange={e => setNewPassword(e.target.value)}
                   placeholder="Leave blank to keep current"
+                  className="w-full border border-gray-200 rounded-xl px-4 py-3 text-gray-700 placeholder-gray-400 focus:ring-2 focus:ring-indigo-500 focus:border-transparent outline-none transition-shadow hover:shadow-sm"
                 />
               </div>
 
-              {/* Confirm Password — only shown if a new password was entered */}
+              {/* Confirm Password — only shown when a new password is typed */}
               {newPassword && (
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1.5">
-                    Confirm Password
-                  </label>
+                  <label className="block text-sm font-medium text-gray-700 mb-1.5">Confirm Password</label>
                   <input
                     type="password"
                     value={confirmPassword}
-                    onChange={(e) => setConfirmPassword(e.target.value)}
+                    onChange={e => setConfirmPassword(e.target.value)}
+                    placeholder="Repeat new password"
                     className={`w-full border rounded-xl px-4 py-3 text-gray-700 placeholder-gray-400 focus:ring-2 focus:border-transparent outline-none transition-shadow hover:shadow-sm ${
                       confirmPassword && confirmPassword !== newPassword
                         ? 'border-red-300 focus:ring-red-400'
                         : 'border-gray-200 focus:ring-indigo-500'
                     }`}
-                    placeholder="Repeat new password"
                   />
                   {confirmPassword && confirmPassword !== newPassword && (
                     <p className="text-xs text-red-500 mt-1">Passwords don&apos;t match</p>
@@ -370,25 +361,12 @@ export default function FirstLoginPage() {
                     </svg>
                     Saving…
                   </span>
-                ) : success ? (
-                  '✓ Saved!'
-                ) : (
-                  'Complete Setup'
-                )}
+                ) : success ? '✓ Saved!' : 'Complete Setup'}
               </button>
+
             </form>
           </div>
 
-          {/* ── Switch link ── */}
-          <p className="text-center text-sm text-gray-500 mt-6">
-            Already completed setup?{' '}
-            <Link
-              href="/login"
-              className="text-indigo-600 font-medium hover:text-indigo-700 hover:underline transition-colors"
-            >
-              ← Back to sign in
-            </Link>
-          </p>
         </div>
       </div>
     </div>
