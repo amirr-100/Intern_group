@@ -1,3 +1,4 @@
+// helpers.ts
 import { supabase } from './supabase'
 
 export function getInitials(name: string | null) {
@@ -9,6 +10,7 @@ export function getInitials(name: string | null) {
     .toUpperCase()
     .slice(0, 2)
 }
+
 
 export async function getRole() {
   const { data: { user } } = await supabase.auth.getUser()

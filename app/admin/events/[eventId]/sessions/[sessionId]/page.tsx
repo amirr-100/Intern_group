@@ -1,3 +1,4 @@
+// app/admin/events/[eventId]/sessions/[sessionId]/page.tsx
 'use client'
 import { useEffect, useState, useCallback } from 'react'
 import { supabase } from '@/lib/supabase'

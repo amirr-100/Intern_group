@@ -1,3 +1,4 @@
+// app/admin/sessions/page.tsx
 'use client'
 import { useEffect, useState, useCallback } from 'react'
 import { supabase } from '@/lib/supabase'
@@ -28,19 +29,24 @@ interface ActiveToken {
 
 export default function SessionsPage() {
   const { profile, loading: authLoading } = useAuth()
-  const [events, setEvents] = useState<EventRow[]>([])
-  const [sessions, setSessions] = useState<Record<string, SessionRow[]>>({})
+  const [events, setEvents]           = useState<EventRow[]>([])
+  const [sessions, setSessions]       = useState<Record<string, SessionRow[]>>({})
   const [activeTokens, setActiveTokens] = useState<Record<string, ActiveToken>>({})
-  const [loading, setLoading] = useState(true)
-  const [starting, setStarting] = useState<string | null>(null)
-  const [ending, setEnding] = useState<string | null>(null)
-  const [copied, setCopied] = useState<string | null>(null)
+  const [loading, setLoading]         = useState(true)
+  const [starting, setStarting]       = useState<string | null>(null)
+  const [ending, setEnding]           = useState<string | null>(null)
+  const [copied, setCopied]           = useState<string | null>(null)
+
+  // ✅ FIX: origin is set in useEffect only — never read window during render
+  const [origin, setOrigin] = useState('')
+  useEffect(() => {
+    setOrigin(window.location.origin)
+  }, [])
 
   const fetchAll = useCallback(async () => {
     if (!profile) return
     const isSuperAdmin = profile.role === 'super_admin'
 
-    // Fetch today's and upcoming events only
     const today = new Date().toISOString().split('T')[0]
     let evQuery = supabase
       .from('events')
@@ -57,7 +63,6 @@ export default function SessionsPage() {
 
     if (eventList.length === 0) { setLoading(false); return }
 
-    // Fetch sessions for all events
     const eventIds = eventList.map(e => e.id)
     const { data: sessData } = await supabase
       .from('sessions')
@@ -72,7 +77,6 @@ export default function SessionsPage() {
     })
     setSessions(sessMap)
 
-    // Fetch active tokens for active sessions
     const activeSessions = (sessData ?? []).filter((s: SessionRow) => s.status === 'active')
     if (activeSessions.length > 0) {
       const activeSessionIds = activeSessions.map((s: SessionRow) => s.id)
@@ -85,12 +89,10 @@ export default function SessionsPage() {
 
       const tokenMap: Record<string, ActiveToken> = {}
       ;(tokenData ?? []).forEach((t: ActiveToken) => {
-        if (!tokenMap[t.session_id]) {
-          tokenMap[t.session_id] = t
-        }
+        if (!tokenMap[t.session_id]) tokenMap[t.session_id] = t
       })
 
-      // Auto-generate tokens for any active session that has none (single batch)
+      // Auto-generate tokens for active sessions without one (batch insert)
       const sessionsWithoutToken: {
         session_id: string
         token: string
@@ -125,20 +127,17 @@ export default function SessionsPage() {
 
   useEffect(() => {
     if (!profile) return
-    const run = async () => { await fetchAll() }
-    run()
+    fetchAll()
   }, [profile, fetchAll])
 
   const startSession = async (session: SessionRow) => {
     setStarting(session.id)
     try {
-      // Start the session
       await supabase
         .from('sessions')
         .update({ status: 'active', started_at: new Date().toISOString() })
         .eq('id', session.id)
 
-      // Generate one QR token valid for 24h (session end is the real gate)
       const token = crypto.randomUUID()
       const expiry = new Date()
       expiry.setHours(expiry.getHours() + 24)
@@ -162,13 +161,11 @@ export default function SessionsPage() {
     if (!confirm('End this session? The QR code will stop working immediately.')) return
     setEnding(session.id)
     try {
-      // Deactivate all tokens
       await supabase
         .from('qr_tokens')
         .update({ is_active: false })
         .eq('session_id', session.id)
 
-      // End the session
       await supabase
         .from('sessions')
         .update({ status: 'ended', ended_at: new Date().toISOString() })
@@ -183,6 +180,7 @@ export default function SessionsPage() {
   }
 
   const copyLink = (token: string, sessionId: string) => {
+    // ✅ Safe — only called from onClick, window always available here
     const url = `${window.location.origin}/attend?token=${token}`
     navigator.clipboard.writeText(url)
     setCopied(sessionId)
@@ -232,8 +230,7 @@ export default function SessionsPage() {
                       {' · '}{event.start_time?.slice(0, 5)} · {event.location}
                     </p>
                   </div>
-                  <Link href={`/admin/events/${event.id}`}
-                    className="text-xs text-indigo-600 hover:underline shrink-0">
+                  <Link href={`/admin/events/${event.id}`} className="text-xs text-indigo-600 hover:underline shrink-0">
                     Manage →
                   </Link>
                 </div>
@@ -249,10 +246,11 @@ export default function SessionsPage() {
                 ) : (
                   <div className="divide-y divide-gray-50">
                     {eventSessions.map(session => {
-                      const token = activeTokens[session.id]
-                      const qrUrl = token && typeof window !== 'undefined' ? `${window.location.origin}/attend?token=${token.token}` : ''
+                      const token    = activeTokens[session.id]
+                      // ✅ FIX: use the `origin` state (set after mount), never read window in render
+                      const qrUrl    = token && origin ? `${origin}/attend?token=${token.token}` : ''
                       const isActive = session.status === 'active'
-                      const isEnded = session.status === 'ended'
+                      const isEnded  = session.status === 'ended'
 
                       return (
                         <div key={session.id} className="px-5 py-4">
@@ -260,16 +258,16 @@ export default function SessionsPage() {
                             <div className="flex items-center gap-3">
                               <span className={`w-2 h-2 rounded-full shrink-0 ${
                                 isActive ? 'bg-green-500 animate-pulse' :
-                                isEnded ? 'bg-gray-300' : 'bg-blue-400'
+                                isEnded  ? 'bg-gray-300' : 'bg-blue-400'
                               }`} />
                               <div>
                                 <p className="text-sm font-medium text-gray-800">{session.name}</p>
                                 <p className={`text-xs mt-0.5 ${
                                   isActive ? 'text-green-600' :
-                                  isEnded ? 'text-gray-400' : 'text-blue-500'
+                                  isEnded  ? 'text-gray-400' : 'text-blue-500'
                                 }`}>
                                   {isActive ? 'Live — accepting check-ins' :
-                                   isEnded ? 'Ended' : 'Not started'}
+                                   isEnded  ? 'Ended' : 'Not started'}
                                 </p>
                               </div>
                             </div>
@@ -299,7 +297,7 @@ export default function SessionsPage() {
                             </div>
                           </div>
 
-                          {/* QR panel — only shown when active */}
+                          {/* QR panel — only shown when active AND origin is set (client-only) */}
                           {isActive && qrUrl && (
                             <div className="mt-4 flex flex-col sm:flex-row items-center gap-5 bg-gray-50 rounded-xl p-4 border border-gray-100">
                               <div className="bg-white p-3 rounded-xl border border-gray-200 shadow-sm shrink-0">
@@ -307,7 +305,9 @@ export default function SessionsPage() {
                               </div>
                               <div className="flex-1 min-w-0 text-center sm:text-left">
                                 <p className="text-xs font-semibold text-gray-700 mb-1">Live check-in QR</p>
-                                <p className="text-xs text-gray-500 mb-3">This QR stays active until you end the session. Display it on screen or share the link below.</p>
+                                <p className="text-xs text-gray-500 mb-3">
+                                  This QR stays active until you end the session. Display it on screen or share the link below.
+                                </p>
                                 <div className="bg-white border border-gray-200 rounded-lg px-3 py-2 text-xs text-gray-500 font-mono break-all mb-2">
                                   {qrUrl}
                                 </div>
@@ -334,14 +334,12 @@ export default function SessionsPage() {
                             </div>
                           )}
 
-                          {/* Not started state */}
                           {session.status === 'scheduled' && (
                             <div className="mt-3 bg-blue-50 border border-blue-100 rounded-xl px-4 py-3 text-xs text-blue-600">
                               No active session — click <strong>Start Session</strong> to generate a QR code and begin accepting attendance.
                             </div>
                           )}
 
-                          {/* Ended state */}
                           {isEnded && (
                             <div className="mt-3 bg-gray-50 border border-gray-100 rounded-xl px-4 py-3 text-xs text-gray-500">
                               Session ended. QR code is deactivated.{' '}

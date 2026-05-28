@@ -1,3 +1,4 @@
+// app/(public)/qr/[token]/page.tsx
 'use client'
 import { useParams } from 'next/navigation'
 import { useEffect, useState, useRef } from 'react'
@@ -54,76 +55,68 @@ function getFingerprint(): string {
   }
 }
 
-const GRACE_MS = 30_000
-
 export default function QRScanPage() {
   const { token } = useParams<{ token: string }>()
-  const [session, setSession]       = useState<SessionData | null>(null)
-  const [event, setEvent]           = useState<EventData | null>(null)
-  const [status, setStatus]         = useState<Status>('loading')
+  const [session, setSession] = useState<SessionData | null>(null)
+  const [event, setEvent] = useState<EventData | null>(null)
+  const [status, setStatus] = useState<Status>('loading')
   const [cachedData, setCachedData] = useState<AttendanceForm | null>(null)
   const [submitting, setSubmitting] = useState(false)
   const [fieldError, setFieldError] = useState<Partial<AttendanceForm>>({})
-  const [duplicateName, setDuplicateName] = useState<string>('')
   const [form, setForm] = useState<AttendanceForm>({
-    full_name: '', phone: '', email: '', institution: '', designation: '',
+    full_name: '',
+    phone: '',
+    email: '',
+    institution: '',
+    designation: '',
   })
   const expiryRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
-  // ── Validate token on mount ──────────────────────────────────────────────
   useEffect(() => {
     const validate = async () => {
-      // Token check now inside the async fn — no synchronous setState in effect body
-      if (!token) { setStatus('expired'); return }
+      const { data: qr } = await supabase
+        .from('qr_tokens')
+        .select('session_id, expires_at, is_active')
+        .eq('token', token)
+        .single()
 
-      try {
-        const { data: qr } = await supabase
-          .from('qr_tokens')
-          .select('session_id, expires_at, is_active')
-          .eq('token', token)
-          .maybeSingle()
-
-        const tokenExpiry = qr ? new Date(qr.expires_at).getTime() : 0
-        const isTokenValid = qr && qr.is_active && (tokenExpiry + GRACE_MS) > Date.now()
-
-        if (!isTokenValid) { setStatus('expired'); return }
-
-        const { data: sess } = await supabase
-          .from('sessions')
-          .select('id, name, status, event_id, qr_refresh_interval')
-          .eq('id', qr.session_id)
-          .maybeSingle()
-
-        if (!sess)                    { setStatus('expired'); return }
-        if (sess.status === 'ended')  { setStatus('closed');  return }
-        if (sess.status !== 'active' && sess.status !== 'paused') {
-          setStatus('expired'); return
-        }
-
-        setSession(sess as SessionData)
-
-        const { data: ev } = await supabase
-          .from('events')
-          .select('name, location')
-          .eq('id', sess.event_id)
-          .maybeSingle()
-        if (ev) setEvent(ev as EventData)
-
-        const cached = getCache()
-        if (cached?.full_name) {
-          setCachedData(cached)
-          setForm(cached)
-        }
-
-        setStatus('valid')
-
-        const msLeft = tokenExpiry + GRACE_MS - Date.now()
-        if (msLeft > 0) {
-          expiryRef.current = setTimeout(() => setStatus('expired'), msLeft)
-        }
-      } catch (err) {
-        console.error('QR validation error:', err)
+      const now = new Date()
+      const GRACE_SECONDS = 30
+      if (!qr || !qr.is_active || (new Date(qr.expires_at).getTime() + GRACE_SECONDS * 1000) < now.getTime()) {
         setStatus('expired')
+        return
+      }
+
+      const { data: sess } = await supabase
+        .from('sessions')
+        .select('id, name, status, event_id, qr_refresh_interval')
+        .eq('id', qr.session_id)
+        .single()
+
+      if (!sess) { setStatus('expired'); return }
+      if (sess.status === 'ended') { setStatus('closed'); return }
+      if (sess.status !== 'active' && sess.status !== 'paused') { setStatus('expired'); return }
+
+      setSession(sess as SessionData)
+
+      const { data: ev } = await supabase
+        .from('events')
+        .select('name, location')
+        .eq('id', sess.event_id)
+        .single()
+      if (ev) setEvent(ev as EventData)
+
+      const cached = getCache()
+      if (cached?.full_name) {
+        setCachedData(cached)
+        setForm(cached)
+      }
+
+      setStatus('valid')
+
+      const msLeft = new Date(qr.expires_at).getTime() - Date.now() + GRACE_SECONDS * 1000
+      if (msLeft > 0) {
+        expiryRef.current = setTimeout(() => setStatus('expired'), msLeft)
       }
     }
 
@@ -131,20 +124,26 @@ export default function QRScanPage() {
     return () => { if (expiryRef.current) clearTimeout(expiryRef.current) }
   }, [token])
 
-  // ── Form helpers ─────────────────────────────────────────────────────────
   const update = (field: keyof AttendanceForm, value: string) => {
-    setForm(f => ({ ...f, [field]: value }))
-    setFieldError(e => ({ ...e, [field]: undefined }))
+    setForm((f) => ({ ...f, [field]: value }))
+    setFieldError((e) => ({ ...e, [field]: undefined }))
   }
 
   const validateForm = (): boolean => {
     const errs: Partial<AttendanceForm> = {}
-    if (!form.full_name.trim()) errs.full_name = 'Full name is required'
-    if (!form.phone.trim())     errs.phone = 'Phone number is required'
+    if (!form.full_name.trim())
+      errs.full_name = 'Full name is required'
+    if (!form.phone.trim())
+      errs.phone = 'Phone number is required'
     else if (!/^\+?[\d\s\-]{7,15}$/.test(form.phone.trim()))
       errs.phone = 'Enter a valid phone number'
     if (form.email && !/\S+@\S+\.\S+/.test(form.email))
       errs.email = 'Enter a valid email address'
+    // ✅ Now required
+    if (!form.institution.trim())
+      errs.institution = 'Institution / Organisation is required'
+    if (!form.designation.trim())
+      errs.designation = 'Designation / Role is required'
     setFieldError(errs)
     return Object.keys(errs).length === 0
   }
@@ -154,141 +153,81 @@ export default function QRScanPage() {
     if (!validateForm() || !session) return
     setSubmitting(true)
 
-    try {
-      // ── Step 1: Check by phone if this person already submitted for this session ──
-      // This is the primary duplicate gate — phone number is the identity.
-      const { data: existing } = await supabase
-        .from('attendance_records')
-        .select('id, full_name')
-        .eq('session_id', session.id)
-        .eq('phone', form.phone.trim())
-        .maybeSingle()
+    const { data: inserted, error: submitError } = await supabase
+      .from('attendance_records')
+      .insert({
+        session_id: session.id,
+        event_id: session.event_id,
+        full_name: form.full_name.trim(),
+        phone: form.phone.trim(),
+        email: form.email.trim() || null,
+        institution: form.institution.trim(),
+        designation: form.designation.trim(),
+        method: 'qr_scan',
+        qr_token_used: token,
+        device_fingerprint: getFingerprint(),
+      })
+      .select('status')
+      .single()
 
-      if (existing) {
-        // They already submitted — block immediately, no insert attempted
-        setDuplicateName(existing.full_name ?? form.full_name)
-        setStatus('duplicate')
-        return
-      }
+    setSubmitting(false)
 
-      // ── Step 2: Re-confirm session is still active before inserting ──
-      const { data: liveSession } = await supabase
-        .from('sessions')
-        .select('status')
-        .eq('id', session.id)
-        .maybeSingle()
-
-      if (liveSession?.status !== 'active') {
-        setStatus('closed')
-        return
-      }
-
-      // ── Step 3: Insert attendance record ──
-      const { error: submitError } = await supabase
-        .from('attendance_records')
-        .insert({
-          session_id:         session.id,
-          event_id:           session.event_id,
-          full_name:          form.full_name.trim(),
-          phone:              form.phone.trim(),
-          email:              form.email.trim() || null,
-          institution:        form.institution.trim() || null,
-          designation:        form.designation.trim() || null,
-          method:             'qr_scan',
-          qr_token_used:      token,
-          device_fingerprint: getFingerprint(),
-          status:             'verified',
-        })
-
-      if (submitError) {
-        // DB unique constraint fallback (race condition safety net)
-        if (
-          submitError.code === '23505' ||
-          submitError.message.toLowerCase().includes('duplicate')
-        ) {
-          setDuplicateName(form.full_name)
-          setStatus('duplicate')
-          return
-        }
-        if (
-          submitError.code === '42501' ||
-          submitError.message.toLowerCase().includes('policy')
-        ) {
-          setStatus('expired')
-          return
-        }
+    if (submitError) {
+      if (submitError.code === '42501' || submitError.message.toLowerCase().includes('policy')) {
+        setStatus('expired')
+      } else {
         setFieldError({ full_name: submitError.message })
-        return
       }
-
-      saveCache(form)
-      setStatus('success')
-    } catch (err) {
-      console.error('Submit error:', err)
-      setFieldError({ full_name: 'Something went wrong. Please try again.' })
-    } finally {
-      setSubmitting(false)
+      return
     }
+
+    saveCache(form)
+    setStatus((inserted as { status: string })?.status === 'duplicate' ? 'duplicate' : 'success')
   }
 
-  // ── Status screens ────────────────────────────────────────────────────────
-  if (status === 'loading') return (
-    <Page>
-      <div className="flex flex-col items-center gap-3 py-16 text-gray-500">
-        <Spinner />
-        <p className="text-sm">Validating QR code…</p>
-      </div>
-    </Page>
-  )
+  if (status === 'loading') {
+    return (
+      <Page>
+        <div className="flex flex-col items-center gap-3 py-16 text-gray-500">
+          <Spinner />
+          <p className="text-sm">Validating QR code…</p>
+        </div>
+      </Page>
+    )
+  }
 
   if (status === 'expired') return (
     <Page>
-      <Card bg="bg-amber-50" icon={<ClockIcon />}
-        title="QR code expired"
+      <Card bg="bg-amber-50" icon={<ClockIcon />} title="QR code expired"
         message="This code is no longer valid. Please scan the latest QR code displayed on the screen." />
     </Page>
   )
 
   if (status === 'closed') return (
     <Page>
-      <Card bg="bg-gray-50" icon={<BlockIcon />}
-        title="Session closed"
+      <Card bg="bg-gray-50" icon={<BlockIcon />} title="Session closed"
         message="This session has ended. Attendance is no longer being accepted." />
     </Page>
   )
 
   if (status === 'success') return (
     <Page>
-      <Card bg="bg-green-50" icon={<CheckIcon />}
-        title="Attendance recorded"
-        message={`Thank you, ${form.full_name}! Your attendance has been saved successfully.`} />
+      <Card bg="bg-green-50" icon={<CheckIcon />} title="Attendance recorded"
+        message={`Thank you, ${form.full_name}! Your attendance has been saved.`} />
     </Page>
   )
 
   if (status === 'duplicate') return (
     <Page>
-      <div className="bg-orange-50 rounded-2xl px-5 py-8 text-center flex flex-col items-center gap-3">
-        <WarnIcon />
-        <h2 className="text-base font-bold text-gray-900">Already submitted</h2>
-        <p className="text-sm text-gray-600 leading-relaxed">
-          <strong>{duplicateName || form.full_name}</strong>, your attendance for this session
-          has already been recorded. You cannot submit again for the same session.
-        </p>
-        <div className="mt-2 bg-orange-100 border border-orange-200 rounded-xl px-4 py-3 text-xs text-orange-700 text-left w-full">
-          If you believe this is an error, please speak to the session organiser.
-        </div>
-      </div>
+      <Card bg="bg-orange-50" icon={<WarnIcon />} title="Already submitted"
+        message="Your attendance for this session has already been recorded." />
     </Page>
   )
 
-  // ── Attendance form ───────────────────────────────────────────────────────
   return (
     <Page>
-      {/* Event / session header */}
       <div className="text-center mb-6 px-2">
-        <h1 className="text-xl font-bold text-gray-900 leading-snug">
-          {event?.name ?? 'Attendance'}
-        </h1>
+        <h1 className="text-xl font-bold text-gray-900 leading-snug">{event?.name ?? 'Attendance'}</h1>
         <p className="text-sm text-gray-500 mt-1">{session?.name}</p>
         {event?.location && (
           <p className="text-xs text-gray-400 mt-0.5 flex items-center justify-center gap-1">
@@ -303,16 +242,13 @@ export default function QRScanPage() {
         )}
       </div>
 
-      {/* Returning-user banner */}
       {cachedData?.full_name && (
         <div className="bg-indigo-50 border border-indigo-100 rounded-2xl px-4 py-3 mb-5 flex items-start justify-between gap-3">
           <div>
             <p className="text-sm font-semibold text-indigo-800">
               Welcome back, {cachedData.full_name.split(' ')[0]}
             </p>
-            <p className="text-xs text-indigo-600 mt-0.5">
-              Your details are filled in. Review and submit.
-            </p>
+            <p className="text-xs text-indigo-600 mt-0.5">Your details are filled in. Review and submit.</p>
           </div>
           <button
             type="button"
@@ -327,69 +263,51 @@ export default function QRScanPage() {
         </div>
       )}
 
-      {/*
-        iOS Safari autofill requires BOTH name="" and autoComplete="" to be present.
-        Use standard HTML autocomplete token values so the browser can match them.
-      */}
-      <form onSubmit={handleSubmit} className="space-y-4" noValidate autoComplete="on">
-
+      <form onSubmit={handleSubmit} className="space-y-4" noValidate>
         <Field label="Full name" required error={fieldError.full_name}>
           <input
-            type="text"
-            name="name"
-            autoComplete="name"
-            value={form.full_name}
-            onChange={e => update('full_name', e.target.value)}
-            placeholder="John Smith"
-            className={inputCls(!!fieldError.full_name)}
+            type="text" value={form.full_name}
+            onChange={(e) => update('full_name', e.target.value)}
+            placeholder="John Smith" autoComplete="name"
+            className={input(!!fieldError.full_name)}
           />
         </Field>
 
         <Field label="Phone number" required error={fieldError.phone}>
           <input
-            type="tel"
-            name="tel"
-            autoComplete="tel"
-            value={form.phone}
-            onChange={e => update('phone', e.target.value)}
-            placeholder="+232 76 000 000"
-            className={inputCls(!!fieldError.phone)}
+            type="tel" value={form.phone}
+            onChange={(e) => update('phone', e.target.value)}
+            placeholder="+232 76 000 000" autoComplete="tel"
+            className={input(!!fieldError.phone)}
           />
         </Field>
 
         <Field label="Email address" error={fieldError.email}>
           <input
-            type="email"
-            name="email"
-            autoComplete="email"
-            value={form.email}
-            onChange={e => update('email', e.target.value)}
-            placeholder="optional"
-            className={inputCls(!!fieldError.email)}
+            type="email" value={form.email}
+            onChange={(e) => update('email', e.target.value)}
+            placeholder="optional" autoComplete="email"
+            className={input(!!fieldError.email)}
           />
         </Field>
 
-        <Field label="Institution / Organisation">
+        {/* ✅ Now required */}
+        <Field label="Institution / Organisation" required error={fieldError.institution}>
           <input
-            type="text"
-            name="organization"
-            autoComplete="organization"
-            value={form.institution}
-            onChange={e => update('institution', e.target.value)}
-            placeholder="optional"
-            className={inputCls(false)}
+            type="text" value={form.institution}
+            onChange={(e) => update('institution', e.target.value)}
+            placeholder="e.g. University of Sierra Leone"
+            className={input(!!fieldError.institution)}
           />
         </Field>
 
-        <Field label="Designation / Role">
+        {/* ✅ Now required */}
+        <Field label="Designation / Role" required error={fieldError.designation}>
           <input
-            type="text"
-            name="organization-title"
-            autoComplete="organization-title"
-            value={form.designation}
-            onChange={e => update('designation', e.target.value)}
-            placeholder="optional"
-            className={inputCls(false)}
+            type="text" value={form.designation}
+            onChange={(e) => update('designation', e.target.value)}
+            placeholder="e.g. Lecturer, Student, Officer"
+            className={input(!!fieldError.designation)}
           />
         </Field>
 
@@ -399,21 +317,20 @@ export default function QRScanPage() {
           className="w-full bg-indigo-600 text-white py-3 rounded-2xl text-sm font-semibold hover:bg-indigo-700 active:scale-[0.99] transition-all disabled:opacity-50 mt-2 shadow-sm"
         >
           {submitting
-            ? <span className="flex items-center justify-center gap-2">
-                <Spinner />Submitting…
-              </span>
+            ? <span className="flex items-center justify-center gap-2"><Spinner />Submitting…</span>
             : 'Submit attendance'}
         </button>
       </form>
 
       <p className="text-xs text-center text-gray-400 mt-5">
-        Each phone number can only be submitted once per session.
+        Fields marked <span className="text-red-500">*</span> are required.
+        This form closes when the session ends or the QR code expires.
       </p>
     </Page>
   )
 }
 
-// ── Layout & shared components ────────────────────────────────────────────────
+// ── Layout helpers ────────────────────────────────────────────────────────────
 
 function Page({ children }: { children: React.ReactNode }) {
   return (
@@ -449,9 +366,7 @@ function Field({ label, required, error, children }: {
       {error && (
         <p className="text-xs text-red-600 mt-1.5 flex items-center gap-1">
           <svg className="w-3 h-3 shrink-0" fill="currentColor" viewBox="0 0 20 20">
-            <path fillRule="evenodd"
-              d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7 4a1 1 0 11-2 0 1 1 0 012 0zm-1-9a1 1 0 00-1 1v4a1 1 0 102 0V6a1 1 0 00-1-1z"
-              clipRule="evenodd" />
+            <path fillRule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7 4a1 1 0 11-2 0 1 1 0 012 0zm-1-9a1 1 0 00-1 1v4a1 1 0 102 0V6a1 1 0 00-1-1z" clipRule="evenodd" />
           </svg>
           {error}
         </p>
@@ -468,43 +383,28 @@ function Spinner() {
     </svg>
   )
 }
-
 function ClockIcon() {
-  return (
-    <svg className="w-8 h-8 text-amber-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5}
-        d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
-    </svg>
-  )
+  return <svg className="w-8 h-8 text-amber-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+  </svg>
 }
-
 function BlockIcon() {
-  return (
-    <svg className="w-8 h-8 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5}
-        d="M18.364 18.364A9 9 0 005.636 5.636m12.728 12.728A9 9 0 015.636 5.636m12.728 12.728L5.636 5.636" />
-    </svg>
-  )
+  return <svg className="w-8 h-8 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M18.364 18.364A9 9 0 005.636 5.636m12.728 12.728A9 9 0 015.636 5.636m12.728 12.728L5.636 5.636" />
+  </svg>
 }
-
 function CheckIcon() {
-  return (
-    <svg className="w-8 h-8 text-green-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
-    </svg>
-  )
+  return <svg className="w-8 h-8 text-green-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+  </svg>
 }
-
 function WarnIcon() {
-  return (
-    <svg className="w-8 h-8 text-orange-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5}
-        d="M12 9v2m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-    </svg>
-  )
+  return <svg className="w-8 h-8 text-orange-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M12 9v2m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+  </svg>
 }
 
-function inputCls(hasError: boolean) {
+function input(hasError: boolean) {
   return [
     'w-full border rounded-xl px-4 py-2.5 text-sm text-gray-800 placeholder-gray-400',
     'focus:ring-2 focus:border-transparent outline-none transition',

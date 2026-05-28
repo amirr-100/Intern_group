@@ -1,4 +1,5 @@
-﻿'use client'
+﻿//context: app/admin/events/page.tsx
+'use client'
 import { useEffect, useState, Suspense } from 'react'
 import { supabase } from '@/lib/supabase'
 import { useRouter } from 'next/navigation'

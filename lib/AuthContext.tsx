@@ -37,9 +37,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [user, setUser]       = useState<User | null>(null)
   const [profile, setProfile] = useState<Profile | null>(null)
   const [loading, setLoading] = useState(true)
-
-  // Ref tracks real loading state so the safety timer closure is never stale
   const loadingRef = useRef(true)
+  const userRef    = useRef<User | null>(null)   // stable ref for visibility handler
 
   const setLoadingBoth = (val: boolean) => {
     loadingRef.current = val
@@ -54,40 +53,33 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     let isMounted = true
 
-    // Safety net: if onAuthStateChange never fires within 8 s (slow network,
-    // ad-blocker, Supabase cold start) we unblock the UI instead of hanging forever.
+    // Safety net: unblock UI if Supabase never responds (slow network / ad-blocker)
     const safetyTimer = setTimeout(() => {
       if (isMounted && loadingRef.current) {
-        console.warn('AuthContext: timed out after 8 s — unblocking UI')
+        console.warn('AuthContext: timed out after 4 s — unblocking UI')
         setUser(null)
+        userRef.current = null
         setProfile(null)
         setLoadingBoth(false)
       }
-    }, 8000)
+    }, 4000)
 
     const { data: { subscription } } = supabase.auth.onAuthStateChange(
       async (event, session) => {
         if (!isMounted) return
-
-        // Auth responded — cancel the safety timer
         clearTimeout(safetyTimer)
 
         try {
-          if (event === 'SIGNED_OUT' || (!session && event !== 'INITIAL_SESSION')) {
-            setUser(null)
-            setProfile(null)
-            return
-          }
-
           const u = session?.user ?? null
           setUser(u)
+          userRef.current = u
 
           if (u) {
             const { data } = await supabase
               .from('profiles')
               .select('*')
               .eq('id', u.id)
-              .maybeSingle()                    // never throws on missing row
+              .maybeSingle()
             if (isMounted) setProfile(data as Profile | null)
           } else {
             setProfile(null)
@@ -96,16 +88,49 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           console.error('AuthContext profile fetch error:', err)
           if (isMounted) setProfile(null)
         } finally {
-          // Always unblock the UI, even on errors
           if (isMounted) setLoadingBoth(false)
         }
       }
     )
 
+    // ─────────────────────────────────────────────────────────────────────────
+    // FIX: Re-validate the session whenever the tab becomes visible again.
+    // This is the root cause of the "idle freeze" — after ~1 min of inactivity
+    // the browser may suspend the tab, the Supabase WebSocket drops, and the
+    // JWT token silently expires. When the user comes back the session is dead
+    // but nothing triggered a re-check. This handler forces one.
+    // ─────────────────────────────────────────────────────────────────────────
+    const handleVisibility = async () => {
+      if (document.visibilityState !== 'visible' || !isMounted) return
+
+      try {
+        const { data: { session } } = await supabase.auth.getSession()
+
+        if (!session) {
+          // Session expired while idle — clear local state and go to login
+          if (userRef.current) {
+            setUser(null)
+            userRef.current = null
+            setProfile(null)
+            window.location.replace('/login')
+          }
+          return
+        }
+
+        // Session is still valid — nothing to do (onAuthStateChange will fire
+        // TOKEN_REFRESHED automatically if the token was silently refreshed)
+      } catch {
+        // Network error on re-focus — don't crash, just wait
+      }
+    }
+
+    document.addEventListener('visibilitychange', handleVisibility)
+
     return () => {
       isMounted = false
       clearTimeout(safetyTimer)
       subscription.unsubscribe()
+      document.removeEventListener('visibilitychange', handleVisibility)
     }
   }, []) // eslint-disable-line react-hooks/exhaustive-deps
 
